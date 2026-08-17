@@ -1,7 +1,7 @@
 <template>
   <div class="bg-white border border-slate-300 rounded-lg p-6 shadow-xs space-y-4 print:border-none print:shadow-none print:p-0">
     
-    <!-- Top Action Bar (No-Print) -->
+    <!-- Top Action Bar -->
     <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 print:hidden text-xs">
       <div class="flex items-center gap-3">
         <label class="inline-flex items-center gap-1.5 cursor-pointer font-medium text-slate-700 select-none">
@@ -10,27 +10,33 @@
         </label>
         <span class="text-slate-400">|</span>
         <span class="text-slate-500 font-medium hidden sm:inline">
-          💡 Klik pada pos atau nominal untuk membuka rincian transaksi
+          💡 Klik baris pos akun untuk membuka rincian transaksi & reassign/split
         </span>
       </div>
 
       <div class="flex items-center gap-2">
         <button
+          @click="$emit('export-excel')"
+          class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-md font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+        >
+          <span>📊</span> Download Excel (Multi-Sheet)
+        </button>
+        <button
           @click="$emit('open-upload')"
           class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md font-semibold transition cursor-pointer"
         >
-          Ganti Periode
+          Ganti Periode & File
         </button>
         <button
           @click="printWindow"
           class="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-md font-semibold transition cursor-pointer"
         >
-          🖨 Cetak Laporan
+          🖨 Cetak
         </button>
       </div>
     </div>
 
-    <!-- Header Laporan Format Formal -->
+    <!-- Header Laporan -->
     <div class="text-center py-2 space-y-0.5">
       <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wide">LAPORAN AKTIFITAS</h2>
       <h3 class="text-xs font-semibold text-slate-800">Pesantren Ibnu Taimiyah Bogor</h3>
@@ -51,10 +57,7 @@
         </thead>
 
         <tbody class="divide-y divide-slate-100 bg-white">
-          
-          <!-- ========================================================= -->
           <!-- A. PENERIMAAN -->
-          <!-- ========================================================= -->
           <tr class="bg-slate-200/90 font-bold text-slate-900">
             <td colspan="5" class="px-3 py-1.5 uppercase text-[11px]">A. PENERIMAAN</td>
           </tr>
@@ -65,62 +68,59 @@
           </tr>
           
           <template v-for="group in filteredA1Groups" :key="group.name">
-            <!-- Single Item Group -->
             <tr
               v-if="group.items.length === 1"
               @click="$emit('select-detail', group.items[0])"
-              class="hover:bg-indigo-50/60 cursor-pointer transition group"
-              title="Klik untuk melihat transaksi pos ini"
+              class="hover:bg-emerald-50/60 cursor-pointer transition group"
+              title="Klik untuk membuka rincian pos ini"
             >
-              <td class="px-3 py-1.5 font-medium text-slate-800 group-hover:text-indigo-900">
+              <td class="px-3 py-1.5 font-medium text-slate-800 group-hover:text-emerald-900">
                 <span class="inline-flex items-center gap-1">
                   {{ group.name }}
-                  <span class="text-[9px] text-indigo-500 opacity-0 group-hover:opacity-100 transition">↗</span>
+                  <span class="text-[9px] text-emerald-500 opacity-0 group-hover:opacity-100 transition">↗</span>
                 </span>
               </td>
-              <td class="px-2 py-1.5 text-center font-mono text-slate-600 group-hover:text-indigo-700 font-semibold">{{ group.items[0].code }}</td>
+              <td class="px-2 py-1.5 text-center font-mono text-slate-600 group-hover:text-emerald-700 font-semibold">{{ group.items[0].code }}</td>
               <td class="px-3 py-1.5 text-slate-600 group-hover:text-slate-900">{{ group.items[0].desc }}</td>
               <td class="px-3 py-1.5 text-right font-mono text-slate-700">
-                {{ getCodeSum(group.items[0].code) > 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
+                {{ getCodeSum(group.items[0].code) !== 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
               </td>
-              <td class="px-3 py-1.5 text-right font-mono text-slate-900 font-bold group-hover:text-indigo-900">
-                {{ getCodeSum(group.items[0].code) > 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
+              <td class="px-3 py-1.5 text-right font-mono text-slate-900 font-bold group-hover:text-emerald-900">
+                {{ getCodeSum(group.items[0].code) !== 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
               </td>
             </tr>
 
-            <!-- Multi Item Group -->
             <template v-else>
               <tr class="bg-slate-50/60 font-semibold text-slate-800 border-t border-slate-200">
                 <td colspan="3" class="px-3 py-1.5 text-slate-900">{{ group.name }}</td>
                 <td class="px-3 py-1.5 text-right text-slate-300">-</td>
                 <td class="px-3 py-1.5 text-right font-mono font-bold text-slate-900">
-                  {{ getGroupTotal(group) > 0 ? formatIDR(getGroupTotal(group)) : '-' }}
+                  {{ getGroupTotal(group) !== 0 ? formatIDR(getGroupTotal(group)) : '-' }}
                 </td>
               </tr>
               <tr
                 v-for="item in group.items"
                 :key="item.code"
                 @click="$emit('select-detail', item)"
-                class="hover:bg-indigo-50/60 cursor-pointer transition text-[11px] group"
-                title="Klik untuk melihat transaksi pos ini"
+                class="hover:bg-emerald-50/60 cursor-pointer transition text-[11px] group"
+                title="Klik untuk membuka rincian pos ini"
               >
-                <td class="px-3 py-1 pl-6 text-slate-400 group-hover:text-indigo-500">↳</td>
-                <td class="px-2 py-1 text-center font-mono text-slate-600 group-hover:text-indigo-700 font-semibold">{{ item.code }}</td>
-                <td class="px-3 py-1 text-slate-700 group-hover:text-indigo-950 font-medium">
+                <td class="px-3 py-1 pl-6 text-slate-400 group-hover:text-emerald-500">↳</td>
+                <td class="px-2 py-1 text-center font-mono text-slate-600 group-hover:text-emerald-700 font-semibold">{{ item.code }}</td>
+                <td class="px-3 py-1 text-slate-700 group-hover:text-emerald-950 font-medium">
                   <span class="inline-flex items-center gap-1">
                     {{ item.desc }}
-                    <span class="text-[9px] text-indigo-500 opacity-0 group-hover:opacity-100 transition">↗</span>
+                    <span class="text-[9px] text-emerald-500 opacity-0 group-hover:opacity-100 transition">↗</span>
                   </span>
                 </td>
-                <td class="px-3 py-1 text-right font-mono text-slate-700 group-hover:text-indigo-900 font-bold">
-                  {{ getCodeSum(item.code) > 0 ? formatIDR(getCodeSum(item.code)) : '-' }}
+                <td class="px-3 py-1 text-right font-mono text-slate-700 group-hover:text-emerald-900 font-bold">
+                  {{ getCodeSum(item.code) !== 0 ? formatIDR(getCodeSum(item.code)) : '-' }}
                 </td>
                 <td class="px-3 py-1 text-right text-slate-300">-</td>
               </tr>
             </template>
           </template>
 
-          <!-- Subtotal A.1 -->
           <tr class="font-bold text-slate-900 bg-slate-100/70 border-t border-slate-200">
             <td colspan="3" class="px-3 py-1.5 italic">Total Penerimaan Rutin</td>
             <td class="px-3 py-1.5 text-right text-slate-300">-</td>
@@ -136,22 +136,22 @@
             <tr
               v-if="group.items.length === 1"
               @click="$emit('select-detail', group.items[0])"
-              class="hover:bg-indigo-50/60 cursor-pointer transition group"
-              title="Klik untuk melihat transaksi pos ini"
+              class="hover:bg-emerald-50/60 cursor-pointer transition group"
+              title="Klik untuk membuka rincian pos ini"
             >
-              <td class="px-3 py-1.5 font-medium text-slate-800 group-hover:text-indigo-900">
+              <td class="px-3 py-1.5 font-medium text-slate-800 group-hover:text-emerald-900">
                 <span class="inline-flex items-center gap-1">
                   {{ group.name }}
-                  <span class="text-[9px] text-indigo-500 opacity-0 group-hover:opacity-100 transition">↗</span>
+                  <span class="text-[9px] text-emerald-500 opacity-0 group-hover:opacity-100 transition">↗</span>
                 </span>
               </td>
-              <td class="px-2 py-1.5 text-center font-mono text-slate-600 group-hover:text-indigo-700 font-semibold">{{ group.items[0].code }}</td>
+              <td class="px-2 py-1.5 text-center font-mono text-slate-600 group-hover:text-emerald-700 font-semibold">{{ group.items[0].code }}</td>
               <td class="px-3 py-1.5 text-slate-600 group-hover:text-slate-900">{{ group.items[0].desc }}</td>
               <td class="px-3 py-1.5 text-right font-mono text-slate-700">
-                {{ getCodeSum(group.items[0].code) > 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
+                {{ getCodeSum(group.items[0].code) !== 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
               </td>
-              <td class="px-3 py-1.5 text-right font-mono text-slate-900 font-bold group-hover:text-indigo-900">
-                {{ getCodeSum(group.items[0].code) > 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
+              <td class="px-3 py-1.5 text-right font-mono text-slate-900 font-bold group-hover:text-emerald-900">
+                {{ getCodeSum(group.items[0].code) !== 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
               </td>
             </tr>
 
@@ -160,52 +160,48 @@
                 <td colspan="3" class="px-3 py-1.5 text-slate-900">{{ group.name }}</td>
                 <td class="px-3 py-1.5 text-right text-slate-300">-</td>
                 <td class="px-3 py-1.5 text-right font-mono font-bold text-slate-900">
-                  {{ getGroupTotal(group) > 0 ? formatIDR(getGroupTotal(group)) : '-' }}
+                  {{ getGroupTotal(group) !== 0 ? formatIDR(getGroupTotal(group)) : '-' }}
                 </td>
               </tr>
               <tr
                 v-for="item in group.items"
                 :key="item.code"
                 @click="$emit('select-detail', item)"
-                class="hover:bg-indigo-50/60 cursor-pointer transition text-[11px] group"
-                title="Klik untuk melihat transaksi pos ini"
+                class="hover:bg-emerald-50/60 cursor-pointer transition text-[11px] group"
+                title="Klik untuk membuka rincian pos ini"
               >
-                <td class="px-3 py-1 pl-6 text-slate-400 group-hover:text-indigo-500">↳</td>
-                <td class="px-2 py-1 text-center font-mono text-slate-600 group-hover:text-indigo-700 font-semibold">{{ item.code }}</td>
-                <td class="px-3 py-1 text-slate-700 group-hover:text-indigo-950 font-medium">
+                <td class="px-3 py-1 pl-6 text-slate-400 group-hover:text-emerald-500">↳</td>
+                <td class="px-2 py-1 text-center font-mono text-slate-600 group-hover:text-emerald-700 font-semibold">{{ item.code }}</td>
+                <td class="px-3 py-1 text-slate-700 group-hover:text-emerald-950 font-medium">
                   <span class="inline-flex items-center gap-1">
                     {{ item.desc }}
-                    <span class="text-[9px] text-indigo-500 opacity-0 group-hover:opacity-100 transition">↗</span>
+                    <span class="text-[9px] text-emerald-500 opacity-0 group-hover:opacity-100 transition">↗</span>
                   </span>
                 </td>
-                <td class="px-3 py-1 text-right font-mono text-slate-700 group-hover:text-indigo-900 font-bold">
-                  {{ getCodeSum(item.code) > 0 ? formatIDR(getCodeSum(item.code)) : '-' }}
+                <td class="px-3 py-1 text-right font-mono text-slate-700 group-hover:text-emerald-900 font-bold">
+                  {{ getCodeSum(item.code) !== 0 ? formatIDR(getCodeSum(item.code)) : '-' }}
                 </td>
                 <td class="px-3 py-1 text-right text-slate-300">-</td>
               </tr>
             </template>
           </template>
 
-          <!-- Subtotal A.2 -->
           <tr class="font-bold text-slate-900 bg-slate-100/70 border-t border-slate-200">
             <td colspan="3" class="px-3 py-1.5 italic">Total Penerimaan Tidak Rutin</td>
             <td class="px-3 py-1.5 text-right text-slate-300">-</td>
             <td class="px-3 py-1.5 text-right font-mono font-bold">{{ formatIDR(sumIncomeNonRutin) }}</td>
           </tr>
 
-          <!-- GRAND TOTAL PENERIMAAN (A) -->
+          <!-- GRAND TOTAL PENERIMAAN -->
           <tr class="bg-slate-200 font-bold text-slate-900 border-t-2 border-b-2 border-slate-400">
             <td colspan="3" class="px-3 py-2 uppercase">TOTAL PENERIMAAN (A)</td>
             <td class="px-3 py-2 text-right font-mono font-bold">{{ formatIDR(grandTotalIncome) }}</td>
             <td class="px-3 py-2 text-right font-mono font-bold">{{ formatIDR(grandTotalIncome) }}</td>
           </tr>
 
-          <!-- Spacer -->
           <tr class="h-2 bg-slate-50"><td colspan="5"></td></tr>
 
-          <!-- ========================================================= -->
-          <!-- B. BEBAN (PENGELUARAN) -->
-          <!-- ========================================================= -->
+          <!-- B. BEBAN -->
           <tr class="bg-slate-200/90 font-bold text-slate-900">
             <td colspan="5" class="px-3 py-1.5 uppercase text-[11px]">B. BEBAN</td>
           </tr>
@@ -220,7 +216,7 @@
               v-if="group.items.length === 1"
               @click="$emit('select-detail', group.items[0])"
               class="hover:bg-rose-50/60 cursor-pointer transition group"
-              title="Klik untuk melihat transaksi pos ini"
+              title="Klik untuk membuka rincian pos ini"
             >
               <td class="px-3 py-1.5 font-medium text-slate-800 group-hover:text-rose-900">
                 <span class="inline-flex items-center gap-1">
@@ -231,10 +227,10 @@
               <td class="px-2 py-1.5 text-center font-mono text-slate-600 group-hover:text-rose-700 font-semibold">{{ group.items[0].code }}</td>
               <td class="px-3 py-1.5 text-slate-600 group-hover:text-slate-900">{{ group.items[0].desc }}</td>
               <td class="px-3 py-1.5 text-right font-mono text-slate-700">
-                {{ getCodeSum(group.items[0].code) > 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
+                {{ getCodeSum(group.items[0].code) !== 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
               </td>
               <td class="px-3 py-1.5 text-right font-mono text-slate-900 font-bold group-hover:text-rose-900">
-                {{ getCodeSum(group.items[0].code) > 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
+                {{ getCodeSum(group.items[0].code) !== 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
               </td>
             </tr>
 
@@ -243,7 +239,7 @@
                 <td colspan="3" class="px-3 py-1.5 text-slate-900">{{ group.name }}</td>
                 <td class="px-3 py-1.5 text-right text-slate-300">-</td>
                 <td class="px-3 py-1.5 text-right font-mono font-bold text-slate-900">
-                  {{ getGroupTotal(group) > 0 ? formatIDR(getGroupTotal(group)) : '-' }}
+                  {{ getGroupTotal(group) !== 0 ? formatIDR(getGroupTotal(group)) : '-' }}
                 </td>
               </tr>
               <tr
@@ -251,7 +247,7 @@
                 :key="item.code"
                 @click="$emit('select-detail', item)"
                 class="hover:bg-rose-50/60 cursor-pointer transition text-[11px] group"
-                title="Klik untuk melihat transaksi pos ini"
+                title="Klik untuk membuka rincian pos ini"
               >
                 <td class="px-3 py-1 pl-6 text-slate-400 group-hover:text-rose-500">↳</td>
                 <td class="px-2 py-1 text-center font-mono text-slate-600 group-hover:text-rose-700 font-semibold">{{ item.code }}</td>
@@ -262,14 +258,13 @@
                   </span>
                 </td>
                 <td class="px-3 py-1 text-right font-mono text-slate-700 group-hover:text-rose-900 font-bold">
-                  {{ getCodeSum(item.code) > 0 ? formatIDR(getCodeSum(item.code)) : '-' }}
+                  {{ getCodeSum(item.code) !== 0 ? formatIDR(getCodeSum(item.code)) : '-' }}
                 </td>
                 <td class="px-3 py-1 text-right text-slate-300">-</td>
               </tr>
             </template>
           </template>
 
-          <!-- Subtotal B.1 -->
           <tr class="font-bold text-slate-900 bg-slate-100/70 border-t border-slate-200">
             <td colspan="3" class="px-3 py-1.5 italic">Total Beban Rutin</td>
             <td class="px-3 py-1.5 text-right text-slate-300">-</td>
@@ -286,7 +281,7 @@
               v-if="group.items.length === 1"
               @click="$emit('select-detail', group.items[0])"
               class="hover:bg-rose-50/60 cursor-pointer transition group"
-              title="Klik untuk melihat transaksi pos ini"
+              title="Klik untuk membuka rincian pos ini"
             >
               <td class="px-3 py-1.5 font-medium text-slate-800 group-hover:text-rose-900">
                 <span class="inline-flex items-center gap-1">
@@ -297,10 +292,10 @@
               <td class="px-2 py-1.5 text-center font-mono text-slate-600 group-hover:text-rose-700 font-semibold">{{ group.items[0].code }}</td>
               <td class="px-3 py-1.5 text-slate-600 group-hover:text-slate-900">{{ group.items[0].desc }}</td>
               <td class="px-3 py-1.5 text-right font-mono text-slate-700">
-                {{ getCodeSum(group.items[0].code) > 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
+                {{ getCodeSum(group.items[0].code) !== 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
               </td>
               <td class="px-3 py-1.5 text-right font-mono text-slate-900 font-bold group-hover:text-rose-900">
-                {{ getCodeSum(group.items[0].code) > 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
+                {{ getCodeSum(group.items[0].code) !== 0 ? formatIDR(getCodeSum(group.items[0].code)) : '-' }}
               </td>
             </tr>
 
@@ -309,7 +304,7 @@
                 <td colspan="3" class="px-3 py-1.5 text-slate-900">{{ group.name }}</td>
                 <td class="px-3 py-1.5 text-right text-slate-300">-</td>
                 <td class="px-3 py-1.5 text-right font-mono font-bold text-slate-900">
-                  {{ getGroupTotal(group) > 0 ? formatIDR(getGroupTotal(group)) : '-' }}
+                  {{ getGroupTotal(group) !== 0 ? formatIDR(getGroupTotal(group)) : '-' }}
                 </td>
               </tr>
               <tr
@@ -317,7 +312,7 @@
                 :key="item.code"
                 @click="$emit('select-detail', item)"
                 class="hover:bg-rose-50/60 cursor-pointer transition text-[11px] group"
-                title="Klik untuk melihat transaksi pos ini"
+                title="Klik untuk membuka rincian pos ini"
               >
                 <td class="px-3 py-1 pl-6 text-slate-400 group-hover:text-rose-500">↳</td>
                 <td class="px-2 py-1 text-center font-mono text-slate-600 group-hover:text-rose-700 font-semibold">{{ item.code }}</td>
@@ -328,33 +323,29 @@
                   </span>
                 </td>
                 <td class="px-3 py-1 text-right font-mono text-slate-700 group-hover:text-rose-900 font-bold">
-                  {{ getCodeSum(item.code) > 0 ? formatIDR(getCodeSum(item.code)) : '-' }}
+                  {{ getCodeSum(item.code) !== 0 ? formatIDR(getCodeSum(item.code)) : '-' }}
                 </td>
                 <td class="px-3 py-1 text-right text-slate-300">-</td>
               </tr>
             </template>
           </template>
 
-          <!-- Subtotal B.2 -->
           <tr class="font-bold text-slate-900 bg-slate-100/70 border-t border-slate-200">
             <td colspan="3" class="px-3 py-1.5 italic">Total Beban Tidak Rutin</td>
             <td class="px-3 py-1.5 text-right text-slate-300">-</td>
             <td class="px-3 py-1.5 text-right font-mono font-bold">{{ formatIDR(sumExpenseNonRutin) }}</td>
           </tr>
 
-          <!-- GRAND TOTAL BEBAN (B) -->
+          <!-- GRAND TOTAL BEBAN -->
           <tr class="bg-slate-200 font-bold text-slate-900 border-t-2 border-b-2 border-slate-400">
             <td colspan="3" class="px-3 py-2 uppercase">TOTAL BEBAN (B)</td>
             <td class="px-3 py-2 text-right font-mono font-bold">{{ formatIDR(grandTotalExpense) }}</td>
             <td class="px-3 py-2 text-right font-mono font-bold">{{ formatIDR(grandTotalExpense) }}</td>
           </tr>
 
-          <!-- Spacer -->
           <tr class="h-2 bg-slate-50"><td colspan="5"></td></tr>
 
-          <!-- ========================================================= -->
-          <!-- SURPLUS / DEFISIT BULAN INI -->
-          <!-- ========================================================= -->
+          <!-- SURPLUS / DEFISIT -->
           <tr class="bg-slate-300 font-bold text-slate-900 border-t-2 border-b-4 border-double border-slate-700">
             <td colspan="3" class="px-3 py-2.5 uppercase">SURPLUS (DEFISIT) BULAN INI</td>
             <td class="px-3 py-2.5 text-right font-mono font-bold">{{ formatIDR(surplusDeficit) }}</td>
@@ -385,7 +376,7 @@ const props = defineProps({
   surplusDeficit: Number
 });
 
-defineEmits(['open-upload', 'select-detail']);
+defineEmits(['open-upload', 'select-detail', 'export-excel']);
 
 const hideZeroRows = ref(false);
 
@@ -395,7 +386,7 @@ function getGroupTotal(group) {
 
 function filterGroups(groups = []) {
   if (!hideZeroRows.value) return groups;
-  return groups.filter(g => getGroupTotal(g) > 0);
+  return groups.filter(g => getGroupTotal(g) !== 0);
 }
 
 const filteredA1Groups = computed(() => filterGroups(props.structure.penerimaanRutin?.groups || []));
