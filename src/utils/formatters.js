@@ -1,3 +1,15 @@
+// src/utils/formatters.js
+
+export const MONTH_NAMES = [
+  '', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+];
+
+export const MONTH_NAMES_SHORT = [
+  '', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+  'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
+];
+
 export function formatIDR(val) {
   if (val === null || val === undefined || isNaN(val)) return 'Rp 0';
   const num = Number(val);
@@ -46,16 +58,22 @@ export function parseExcelDate(rawVal) {
   const str = String(rawVal).trim();
   const num = parseFloat(str);
 
+  // Serial Date Excel (misal: 45400)
   if (!isNaN(num) && num > 30000 && num < 60000) {
     const d = new Date(Math.round((num - 25569) * 86400 * 1000));
+    const day = d.getUTCDate();
+    const month = d.getUTCMonth() + 1;
+    const year = d.getUTCFullYear();
     return {
-      day: d.getUTCDate(),
-      month: d.getUTCMonth() + 1,
-      year: d.getUTCFullYear(),
-      formatted: `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`
+      day,
+      month,
+      year,
+      monthKey: `${year}-${String(month).padStart(2, '0')}`,
+      formatted: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
     };
   }
 
+  // Format String: DD/MM/YYYY atau YYYY-MM-DD
   const parts = str.split(/[\/\-\.\s]/);
   if (parts.length >= 3) {
     let p1 = parseInt(parts[0], 10);
@@ -65,10 +83,15 @@ export function parseExcelDate(rawVal) {
       let day = p1, month = p2, year = p3;
       if (p1 > 1000) { year = p1; month = p2; day = p3; }
       if (year < 100) year += 2000;
-      return {
-        day, month, year,
-        formatted: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
-      };
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        return {
+          day,
+          month,
+          year,
+          monthKey: `${year}-${String(month).padStart(2, '0')}`,
+          formatted: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
+        };
+      }
     }
   }
   return null;

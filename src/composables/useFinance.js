@@ -4,9 +4,9 @@ import * as XLSX from 'xlsx';
 import { REPORT_STRUCTURE } from '../constants/reportStructure.js';
 import { MASTER_COA_LIST } from '../constants/coa.js';
 import { routeIncomeItem } from '../utils/classClassifier.js';
-import { parseExcelDate, parseAmount, formatIDR } from '../utils/formatters.js';
+import { parseExcelDate, parseAmount, formatIDR, MONTH_NAMES, MONTH_NAMES_SHORT } from '../utils/formatters.js';
 import { useDaftarUlang } from './useDaftarUlang.js';
-import { buildDaftarUlangFullExcel, downloadReportBundleZip } from '../utils/exportBundle.js';
+import { buildDaftarUlangFullExcel, downloadReportBundleZip, buildActivityMatrixWorkbook } from '../utils/exportBundle.js';
 
 export function useFinance() {
   const activeTab = ref('report');
@@ -42,27 +42,199 @@ export function useFinance() {
   // Modal States
   const isSplitModalOpen = ref(false);
   const targetSplitTransaction = ref(null);
-
   const isReassignModalOpen = ref(false);
   const reassignTargetIds = ref([]);
   const singleReassignTransaction = ref(null);
 
-  // Periode Laporan
+  // --------------------------------------------------------------------------
+  // PENGATURAN PERIODE & FILTERING REAKTIF
+  // --------------------------------------------------------------------------
   const now = new Date();
+  const periodMode = ref('single'); // 'single' | 'academic' | 'all'
   const selectedMonth = ref(now.getMonth() + 1);
   const selectedYear = ref(now.getFullYear());
+  const selectedAcademicYear = ref(2026); // 2026 -> TA 2026/2027
+  const hideEmptyMonthColumns = ref(true); // Hanya tampilkan bulan yang ada data transaksi
 
-  const MONTH_NAMES = [
-    '', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-  ];
-
-  const activePeriodLabel = computed(() => `${MONTH_NAMES[selectedMonth.value]} ${selectedYear.value}`);
-
-  // Transaksi
+  // Semua transaksi tersimpan utuh di memori
   const transactions = ref([]);
   const selectedAccountDetail = ref(null);
 
+  // Label Periode Aktif
+  const activePeriodLabel = computed(() => {
+    if (periodMode.value === 'single') {
+      return `${MONTH_NAMES[selectedMonth.value]} ${selectedYear.value}`;
+    }
+    if (periodMode.value === 'academic') {
+      return `T.A. ${selectedAcademicYear.value}/${selectedAcademicYear.value + 1} (Juli ${selectedAcademicYear.value} – Juni ${selectedAcademicYear.value + 1})`;
+    }
+    return 'Semua Periode Transaksi';
+  });
+
+  // Transaksi Terfilter Sesuai Mode Periode (Dynamic Reactive)
+  const filteredTransactionsByPeriod = computed(() => {
+    if (periodMode.value === 'single') {
+      return transactions.value.filter(
+        t => t.month === selectedMonth.value && t.year === selectedYear.value
+      );
+    }
+    if (periodMode.value === 'academic') {
+      const startYr = selectedAcademicYear.value;
+      return transactions.value.filter(t => {
+        if (!t.year || !t.month) return false;
+        if (t.year === startYr && t.month >= 7) return true;
+        if (t.year === startYr + 1 && t.month <= 6) return true;
+        return false;
+      });
+    }
+    return transactions.value;
+  });
+
+  // Daftar Bulan yang Tersedia di Seluruh Dataset
+  const availableMonthsInDataset = computed(() => {
+    const map = new Map();
+    transactions.value.forEach(t => {
+      if (t.year && t.month) {
+        const key = `${t.year}-${String(t.month).padStart(2, '0')}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            year: t.year,
+            month: t.month,
+            label: `${MONTH_NAMES_SHORT[t.month]} ${t.year}`,
+            fullLabel: `${MONTH_NAMES[t.month]} ${t.year}`
+          });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+  });
+
+  // Kolom-kolom Bulan Aktif yang Ditampilkan pada Tabel Matriks
+  const visibleMonths = computed(() => {
+    if (periodMode.value === 'single') {
+      const key = `${selectedYear.value}-${String(selectedMonth.value).padStart(2, '0')}`;
+      return [{
+        key,
+        year: selectedYear.value,
+        month: selectedMonth.value,
+        label: `${MONTH_NAMES_SHORT[selectedMonth.value]} ${selectedYear.value}`,
+        fullLabel: `${MONTH_NAMES[selectedMonth.value]} ${selectedYear.value}`
+      }];
+    }
+
+    if (periodMode.value === 'academic') {
+      const startYr = selectedAcademicYear.value;
+      const academicSequence = [
+        { m: 7, y: startYr }, { m: 8, y: startYr }, { m: 9, y: startYr },
+        { m: 10, y: startYr }, { m: 11, y: startYr }, { m: 12, y: startYr },
+        { m: 1, y: startYr + 1 }, { m: 2, y: startYr + 1 }, { m: 3, y: startYr + 1 },
+        { m: 4, y: startYr + 1 }, { m: 5, y: startYr + 1 }, { m: 6, y: startYr + 1 }
+      ];
+
+      const monthsWithData = new Set(
+        filteredTransactionsByPeriod.value.map(t => `${t.year}-${String(t.month).padStart(2, '0')}`)
+      );
+
+      const sequence = academicSequence.map(seq => {
+        const key = `${seq.y}-${String(seq.m).padStart(2, '0')}`;
+        return {
+          key,
+          year: seq.y,
+          month: seq.m,
+          label: `${MONTH_NAMES_SHORT[seq.m]} ${seq.y}`,
+          fullLabel: `${MONTH_NAMES[seq.m]} ${seq.y}`,
+          hasData: monthsWithData.has(key)
+        };
+      });
+
+      if (hideEmptyMonthColumns.value) {
+        const filtered = sequence.filter(m => m.hasData);
+        return filtered.length > 0 ? filtered : sequence.slice(0, 1);
+      }
+      return sequence;
+    }
+
+    return availableMonthsInDataset.value.length > 0
+      ? availableMonthsInDataset.value
+      : [{
+          key: `${selectedYear.value}-${String(selectedMonth.value).padStart(2, '0')}`,
+          year: selectedYear.value,
+          month: selectedMonth.value,
+          label: `${MONTH_NAMES_SHORT[selectedMonth.value]} ${selectedYear.value}`,
+          fullLabel: `${MONTH_NAMES[selectedMonth.value]} ${selectedYear.value}`
+        }];
+  });
+
+  // --------------------------------------------------------------------------
+  // MATRIKS REAKTIF CEPAT (O(1) Cell Lookup)
+  // --------------------------------------------------------------------------
+  const codeSumMatrix = computed(() => {
+    const matrix = {}; // code -> { [monthKey]: number, total: number }
+    const periodTxs = filteredTransactionsByPeriod.value;
+
+    for (let i = 0; i < periodTxs.length; i++) {
+      const t = periodTxs[i];
+      const code = t.code || 'A26';
+      const mKey = t.monthKey || `${t.year}-${String(t.month).padStart(2, '0')}`;
+      const amt = Number(t.amount) || 0;
+
+      if (!matrix[code]) {
+        matrix[code] = { total: 0 };
+      }
+      matrix[code].total += amt;
+      matrix[code][mKey] = (matrix[code][mKey] || 0) + amt;
+    }
+
+    return matrix;
+  });
+
+  function getCodeSum(code, monthKey = null) {
+    const codeData = codeSumMatrix.value[code];
+    if (!codeData) return 0;
+    if (monthKey) {
+      return codeData[monthKey] || 0;
+    }
+    return codeData.total || 0;
+  }
+
+  function getGroupTotal(group, monthKey = null) {
+    return (group.items || []).reduce((sum, item) => sum + getCodeSum(item.code, monthKey), 0);
+  }
+
+  function getSectionTotal(sectionGroups, monthKey = null) {
+    return (sectionGroups || []).reduce((acc, g) => acc + getGroupTotal(g, monthKey), 0);
+  }
+
+  function sumPenerimaanRutin(monthKey = null) {
+    return getSectionTotal(REPORT_STRUCTURE.penerimaanRutin.groups, monthKey);
+  }
+
+  function sumPenerimaanTidakRutin(monthKey = null) {
+    return getSectionTotal(REPORT_STRUCTURE.penerimaanTidakRutin.groups, monthKey);
+  }
+
+  function grandTotalIncome(monthKey = null) {
+    return sumPenerimaanRutin(monthKey) + sumPenerimaanTidakRutin(monthKey);
+  }
+
+  function sumBebanRutin(monthKey = null) {
+    return getSectionTotal(REPORT_STRUCTURE.bebanRutin.groups, monthKey);
+  }
+
+  function sumBebanTidakRutin(monthKey = null) {
+    return getSectionTotal(REPORT_STRUCTURE.bebanTidakRutin.groups, monthKey);
+  }
+
+  function grandTotalExpense(monthKey = null) {
+    return sumBebanRutin(monthKey) + sumBebanTidakRutin(monthKey);
+  }
+
+  function surplusDeficit(monthKey = null) {
+    return grandTotalIncome(monthKey) - grandTotalExpense(monthKey);
+  }
+
+  // Navigasi & Detail
   function setDetailAccount(item) {
     savedScrollPosition.value = window.pageYOffset || document.documentElement.scrollTop || 0;
     selectedAccountDetail.value = item;
@@ -88,7 +260,7 @@ export function useFinance() {
     }
   }
 
-  // REASSIGN POS
+  // Reassign & Split
   function openReassignModal(item) {
     singleReassignTransaction.value = item;
     reassignTargetIds.value = [item.id];
@@ -151,18 +323,18 @@ export function useFinance() {
     targetSplitTransaction.value = null;
   }
 
-  // AUTO-SPLIT WATERFALL OTOMATIS
   function executeAutoSplitDaftarUlang() {
     const result = runWaterfallSplit(transactions.value);
     transactions.value = result.updatedTransactions;
     return result;
   }
 
-  // PARSER EXCEL DINAMIS & EKSEKUSI OTOMATIS
+  // --------------------------------------------------------------------------
+  // PARSER EXCEL DINAMIS (Menyimpan Seluruh Bulan Tanpa Dibuang)
+  // --------------------------------------------------------------------------
   async function processExcelFile(file, type) {
-    // Validasi Urutan Upload: Penerimaan Harus Sebelum Tagihan Daftar Ulang
     if (type === 'tagihan_du' && !filesStatus.value.penerimaan.uploaded) {
-      alert('Perhatian: Harap upload File Penerimaan (16 Kolom) terlebih dahulu agar data transaksi kasir dapat otomatis dicocokkan dan di-split.');
+      alert('Perhatian: Harap upload File Penerimaan terlebih dahulu agar transaksi kasir dapat otomatis di-split.');
       return;
     }
 
@@ -177,9 +349,7 @@ export function useFinance() {
           const data = new Uint8Array(e.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
 
-          // ---------------------------------------------------------
-          // A. FILE TAGIHAN DAFTAR ULANG -> LANGSUNG AUTO-SPLIT OTOMATIS
-          // ---------------------------------------------------------
+          // A. File Tagihan Daftar Ulang
           if (type === 'tagihan_du') {
             const ws = workbook.Sheets[workbook.SheetNames[0]];
             const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
@@ -191,7 +361,6 @@ export function useFinance() {
               count
             };
 
-            // EKSEKUSI LANGSUNG AUTO SPLIT TANPA TOMBOL
             const splitRes = executeAutoSplitDaftarUlang();
 
             uploadResultModal.value = {
@@ -201,7 +370,7 @@ export function useFinance() {
               fileName: file.name,
               loadedCount: count,
               skippedCount: splitRes.skippedPastYearCount,
-              message: `Berhasil memuat ${count} data santri dan otomatis memecah ${splitRes.splitCount} transaksi Daftar Ulang ke pos masing-masing!`
+              message: `Berhasil memuat ${count} santri dan otomatis memecah ${splitRes.splitCount} transaksi Daftar Ulang ke pos masing-masing!`
             };
 
             resolve({ loadedCount: count, skippedCount: 0 });
@@ -222,12 +391,9 @@ export function useFinance() {
 
           const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
           let loadedCount = 0;
-          let skippedCount = 0;
           const newItems = [];
 
-          // ---------------------------------------------------------
-          // B. PENGELUARAN (KAS KECIL)
-          // ---------------------------------------------------------
+          // B. Pengeluaran (Kas Kecil)
           if (type === 'pengeluaran') {
             let headerIdx = 3;
             for (let r = 0; r < Math.min(rows.length, 10); r++) {
@@ -258,14 +424,16 @@ export function useFinance() {
               }
 
               if (amount > 0) {
-                if (parsedDate && (parsedDate.month !== selectedMonth.value || parsedDate.year !== selectedYear.value)) {
-                  skippedCount++;
-                  continue;
-                }
+                const tYear = parsedDate ? parsedDate.year : selectedYear.value;
+                const tMonth = parsedDate ? parsedDate.month : selectedMonth.value;
 
                 newItems.push({
                   id: `EXP-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 5)}`,
                   date: parsedDate ? parsedDate.formatted : String(cols[1] || ''),
+                  day: parsedDate ? parsedDate.day : 1,
+                  month: tMonth,
+                  year: tYear,
+                  monthKey: `${tYear}-${String(tMonth).padStart(2, '0')}`,
                   code: rawCode,
                   pos: String(cols[3] || 'Kas Kecil').trim(),
                   desc: rawDesc,
@@ -282,10 +450,8 @@ export function useFinance() {
               fileName: file.name,
               count: loadedCount
             };
-          } 
-          // ---------------------------------------------------------
-          // C. PENERIMAAN 16 KOLOM
-          // ---------------------------------------------------------
+          }
+          // C. Penerimaan Kasir
           else if (type === 'penerimaan') {
             let headerIdx = 0;
             for (let r = 0; r < Math.min(rows.length, 15); r++) {
@@ -325,7 +491,7 @@ export function useFinance() {
               const pos = mapCol.pos !== -1 ? String(cols[mapCol.pos] || '').trim().toUpperCase() : String(cols[7] || cols[8] || '').trim().toUpperCase();
               const tapel = mapCol.tapel !== -1 ? String(cols[mapCol.tapel] || '').trim() : '';
               const ketItem = mapCol.ketItem !== -1 ? String(cols[mapCol.ketItem] || pos).trim() : pos;
-              
+
               let rawAmountVal = mapCol.amount !== -1 ? cols[mapCol.amount] : cols[cols.length - 1];
               let amount = parseAmount(rawAmountVal);
 
@@ -351,6 +517,7 @@ export function useFinance() {
                       year: yr,
                       month: mo,
                       day: dy,
+                      monthKey: `${yr}-${String(mo).padStart(2, '0')}`,
                       formatted: `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`
                     };
                   }
@@ -358,16 +525,17 @@ export function useFinance() {
               }
 
               if (amount !== 0 && pos) {
-                if (parsedDate && (parsedDate.month !== selectedMonth.value || parsedDate.year !== selectedYear.value)) {
-                  skippedCount++;
-                  continue;
-                }
-
+                const tYear = parsedDate ? parsedDate.year : selectedYear.value;
+                const tMonth = parsedDate ? parsedDate.month : selectedMonth.value;
                 const routed = routeIncomeItem(pos, kelas, amount, ketItem, senderOrStudent);
 
                 newItems.push({
                   id: `INC-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 5)}`,
                   date: parsedDate ? parsedDate.formatted : (noTrans || 'Kasir'),
+                  day: parsedDate ? parsedDate.day : 1,
+                  month: tMonth,
+                  year: tYear,
+                  monthKey: `${tYear}-${String(tMonth).padStart(2, '0')}`,
                   code: routed.kode,
                   pos: pos,
                   nis: nis,
@@ -390,9 +558,9 @@ export function useFinance() {
             };
           }
 
+          // Simpan seluruh data baru
           transactions.value.push(...newItems);
 
-          // Jika sebelumnya master tagihan sudah terpasang, langsung lakukan split otomatis
           if (filesStatus.value.tagihanDU.uploaded) {
             executeAutoSplitDaftarUlang();
           }
@@ -403,11 +571,11 @@ export function useFinance() {
             title: 'Upload Berhasil',
             fileName: file.name,
             loadedCount,
-            skippedCount,
-            message: `Berhasil memuat ${loadedCount} transaksi ke dalam periode ${activePeriodLabel.value}.`
+            skippedCount: 0,
+            message: `Berhasil memuat ${loadedCount} transaksi ke dalam sistem.`
           };
 
-          resolve({ loadedCount, skippedCount });
+          resolve({ loadedCount, skippedCount: 0 });
         } catch (err) {
           uploadResultModal.value = {
             show: true,
@@ -433,148 +601,43 @@ export function useFinance() {
     });
   }
 
-  // KALKULASI
   function getTransactionsForCode(code) {
-    return transactions.value.filter(t => t.code === code);
+    return filteredTransactionsByPeriod.value.filter(t => t.code === code);
   }
 
-  function getSumForCode(code) {
-    return transactions.value
-      .filter(t => t.code === code)
-      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-  }
-
-  const sumPenerimaanRutin = computed(() => {
-    return (REPORT_STRUCTURE.penerimaanRutin.groups || []).reduce(
-      (acc, group) => acc + group.items.reduce((s, i) => s + getSumForCode(i.code), 0), 0
-    );
-  });
-
-  const sumPenerimaanTidakRutin = computed(() => {
-    return (REPORT_STRUCTURE.penerimaanTidakRutin.groups || []).reduce(
-      (acc, group) => acc + group.items.reduce((s, i) => s + getSumForCode(i.code), 0), 0
-    );
-  });
-
-  const grandTotalIncome = computed(() => sumPenerimaanRutin.value + sumPenerimaanTidakRutin.value);
-
-  const sumBebanRutin = computed(() => {
-    return (REPORT_STRUCTURE.bebanRutin.groups || []).reduce(
-      (acc, group) => acc + group.items.reduce((s, i) => s + getSumForCode(i.code), 0), 0
-    );
-  });
-
-  const sumBebanTidakRutin = computed(() => {
-    return (REPORT_STRUCTURE.bebanTidakRutin.groups || []).reduce(
-      (acc, group) => acc + group.items.reduce((s, i) => s + getSumForCode(i.code), 0), 0
-    );
-  });
-
-  const grandTotalExpense = computed(() => sumBebanRutin.value + sumBebanTidakRutin.value);
-  const surplusDeficit = computed(() => grandTotalIncome.value - grandTotalExpense.value);
-
-  // BUILD WORKBOOK LAPORAN AKTIVITAS
+  // --------------------------------------------------------------------------
+  // EKSPOR EXCEL & ARSIP ZIP LENGKAP
+  // --------------------------------------------------------------------------
   function generateActivityReportWorkbook() {
-    const wb = XLSX.utils.book_new();
-
-    const summaryRows = [
-      ['LAPORAN AKTIFITAS KEUANGAN'],
-      ['PESANTREN IBNU TAIMIYAH BOGOR'],
-      [`Periode: ${activePeriodLabel.value}`],
-      [''],
-      ['Kategori / Pos Akun', 'Kode', 'Rincian Pos', 'Rincian (Rp)', 'Subtotal (Rp)'],
-      ['A. PENERIMAAN', '', '', '', ''],
-      ['A.1 PENERIMAAN RUTIN', '', '', '', '']
-    ];
-
-    function appendGroups(groups) {
-      groups.forEach(g => {
-        if (g.items.length === 1) {
-          const item = g.items[0];
-          const val = getSumForCode(item.code);
-          summaryRows.push([g.name, item.code, item.desc, val, val]);
-        } else {
-          const groupTotal = g.items.reduce((s, it) => s + getSumForCode(it.code), 0);
-          summaryRows.push([g.name, '', '', '', groupTotal]);
-          g.items.forEach(it => {
-            const itVal = getSumForCode(it.code);
-            summaryRows.push(['', it.code, it.desc, itVal, '']);
-          });
-        }
-      });
-    }
-
-    appendGroups(REPORT_STRUCTURE.penerimaanRutin.groups);
-    summaryRows.push(['Total Penerimaan Rutin', '', '', '', sumPenerimaanRutin.value]);
-    summaryRows.push(['A.2 PENERIMAAN TIDAK RUTIN', '', '', '', '']);
-    appendGroups(REPORT_STRUCTURE.penerimaanTidakRutin.groups);
-    summaryRows.push(['Total Penerimaan Tidak Rutin', '', '', '', sumPenerimaanTidakRutin.value]);
-    summaryRows.push(['TOTAL PENERIMAAN (A)', '', '', grandTotalIncome.value, grandTotalIncome.value]);
-    summaryRows.push(['']);
-
-    summaryRows.push(['B. BEBAN', '', '', '', '']);
-    summaryRows.push(['B.1 BEBAN RUTIN', '', '', '', '']);
-    appendGroups(REPORT_STRUCTURE.bebanRutin.groups);
-    summaryRows.push(['Total Beban Rutin', '', '', '', sumBebanRutin.value]);
-    summaryRows.push(['B.2 BEBAN TIDAK RUTIN', '', '', '', '']);
-    appendGroups(REPORT_STRUCTURE.bebanTidakRutin.groups);
-    summaryRows.push(['Total Beban Tidak Rutin', '', '', '', sumBebanTidakRutin.value]);
-    summaryRows.push(['TOTAL BEBAN (B)', '', '', grandTotalExpense.value, grandTotalExpense.value]);
-    summaryRows.push(['']);
-    summaryRows.push(['SURPLUS (DEFISIT) BULAN INI', '', '', surplusDeficit.value, surplusDeficit.value]);
-
-    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Laporan Aktivitas');
-
-    const activeCodes = [...new Set(transactions.value.map(t => t.code))].filter(Boolean);
-    activeCodes.forEach(code => {
-      const coaMeta = MASTER_COA_LIST.find(c => c.kode === code) || { nama: 'Pos Akun' };
-      const items = getTransactionsForCode(code);
-      if (items.length === 0) return;
-
-      const sheetData = [
-        [`RINCIAN TRANSAKSI: [${code}] ${coaMeta.nama}`],
-        [`Periode: ${activePeriodLabel.value} | Total: ${formatIDR(getSumForCode(code))}`],
-        [''],
-        ['No', 'Tanggal', 'Uraian Transaksi', 'Petugas / PIC', 'Pos Asal', 'Tipe', 'Nominal (Rp)']
-      ];
-
-      items.forEach((it, idx) => {
-        sheetData.push([
-          idx + 1,
-          it.date,
-          it.desc,
-          it.pic,
-          it.pos,
-          it.type,
-          it.amount
-        ]);
-      });
-
-      sheetData.push(['', '', '', '', 'Total Pos:', '', getSumForCode(code)]);
-
-      const wsDetail = XLSX.utils.aoa_to_sheet(sheetData);
-      let sheetName = `${code}_${coaMeta.nama}`.replace(/[:\\/?*\[\]]/g, '').substring(0, 30);
-      XLSX.utils.book_append_sheet(wb, wsDetail, sheetName);
+    return buildActivityMatrixWorkbook({
+      structure: REPORT_STRUCTURE,
+      visibleMonths: visibleMonths.value,
+      activePeriodLabel: activePeriodLabel.value,
+      getCodeSum,
+      getGroupTotal,
+      sumPenerimaanRutin,
+      sumPenerimaanTidakRutin,
+      grandTotalIncome,
+      sumBebanRutin,
+      sumBebanTidakRutin,
+      grandTotalExpense,
+      surplusDeficit,
+      filteredTransactions: filteredTransactionsByPeriod.value,
+      masterCoaList: MASTER_COA_LIST
     });
-
-    return wb;
   }
 
-  // 1. Download Standalone Excel Laporan
   function exportFullExcel() {
     const wb = generateActivityReportWorkbook();
-    const fileName = `Laporan_Keuangan_PIT_${selectedMonth.value}_${selectedYear.value}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    const cleanLabel = activePeriodLabel.value.replace(/[\/\s:]+/g, '_');
+    XLSX.writeFile(wb, `Laporan_Aktivitas_Keuangan_PIT_${cleanLabel}.xlsx`);
   }
 
-  // 2. Download Standalone Excel Rincian Daftar Ulang Semua Santri
   function exportDaftarUlangExcel() {
     const wb = buildDaftarUlangFullExcel(fullBreakdownRows.value, activePeriodLabel.value);
-    XLSX.writeFile(wb, `Rincian_Daftar_Ulang_Semua_Santri_PIT_${activePeriodLabel.value.replace(/\s+/g, '_')}.xlsx`);
+    XLSX.writeFile(wb, `Rincian_Daftar_Ulang_Semua_Santri_PIT_${activePeriodLabel.value.replace(/[\/\s:]+/g, '_')}.xlsx`);
   }
 
-  // 3. Download Bundle Arsip Laporan Lengkap (.zip)
   async function downloadFullReportBundle() {
     isLoading.value = true;
     loadingStatus.value = 'Mempersiapkan paket laporan ZIP...';
@@ -585,9 +648,12 @@ export function useFinance() {
         : null;
 
       const fullState = {
-        appVersion: '2.0.0',
+        appVersion: '3.0.0',
         exportedAt: new Date().toISOString(),
-        period: { month: selectedMonth.value, year: selectedYear.value },
+        periodMode: periodMode.value,
+        selectedMonth: selectedMonth.value,
+        selectedYear: selectedYear.value,
+        selectedAcademicYear: selectedAcademicYear.value,
         transactions: transactions.value,
         studentMasterList: studentMasterList.value,
         presets: presets.value,
@@ -608,7 +674,6 @@ export function useFinance() {
     }
   }
 
-  // 4. Restore Full State dari File JSON
   function restoreSystemFromJSON(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -620,10 +685,10 @@ export function useFinance() {
             if (data.studentMasterList) studentMasterList.value = data.studentMasterList;
             if (data.presets) savePresets(data.presets);
             if (data.filesStatus) filesStatus.value = data.filesStatus;
-            if (data.period) {
-              selectedMonth.value = data.period.month;
-              selectedYear.value = data.period.year;
-            }
+            if (data.periodMode) periodMode.value = data.periodMode;
+            if (data.selectedMonth) selectedMonth.value = data.selectedMonth;
+            if (data.selectedYear) selectedYear.value = data.selectedYear;
+            if (data.selectedAcademicYear) selectedAcademicYear.value = data.selectedAcademicYear;
             resolve(data);
           } else {
             throw new Error('Format file backup JSON tidak cocok.');
@@ -638,12 +703,19 @@ export function useFinance() {
   }
 
   return {
-    transactions,
-    filesStatus,
+    periodMode,
     selectedMonth,
     selectedYear,
+    selectedAcademicYear,
+    hideEmptyMonthColumns,
     MONTH_NAMES,
+    MONTH_NAMES_SHORT,
     activePeriodLabel,
+    visibleMonths,
+    availableMonthsInDataset,
+    transactions,
+    filteredTransactionsByPeriod,
+    filesStatus,
     activeTab,
     selectedAccountDetail,
     isLoading,
@@ -667,7 +739,8 @@ export function useFinance() {
     deleteTransaction,
     deleteMassTransactions,
     getTransactionsForCode,
-    getSumForCode,
+    getCodeSum,
+    getGroupTotal,
     sumPenerimaanRutin,
     sumPenerimaanTidakRutin,
     grandTotalIncome,

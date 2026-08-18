@@ -1,6 +1,7 @@
 <!-- src/App.vue -->
 <template>
   <div class="min-h-screen bg-slate-100/70 text-slate-800 antialiased font-sans flex flex-col">
+    
     <!-- Overlay Loader -->
     <div
       v-if="isLoading"
@@ -36,10 +37,6 @@
             <span>Baris Dimuat:</span>
             <span class="font-mono font-bold text-slate-900">{{ uploadResultModal.loadedCount }}</span>
           </div>
-          <div class="flex justify-between text-slate-600">
-            <span>Dilewati / Dilindungi:</span>
-            <span class="font-mono text-slate-500">{{ uploadResultModal.skippedCount }}</span>
-          </div>
           <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
             {{ uploadResultModal.message }}
           </p>
@@ -66,7 +63,7 @@
       @select-coa="handleConfirmReassign"
     />
 
-    <!-- Modal Split Transaksi Manual -->
+    <!-- Modal Split Transaksi -->
     <ModalSplit
       :isOpen="isSplitModalOpen"
       :transaction="targetSplitTransaction"
@@ -78,14 +75,18 @@
     <!-- Header Navigation -->
     <HeaderNav :currentTab="activeTab" @change-tab="activeTab = $event" />
 
-    <main class="flex-grow max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
       
       <!-- ================= 1. TAB LAPORAN AKTIVITAS ================= -->
       <div v-if="activeTab === 'report'">
         <ActivityReportTable
           :structure="REPORT_STRUCTURE"
           :activePeriod="activePeriodLabel"
-          :getCodeSum="getSumForCode"
+          :periodMode="periodMode"
+          :visibleMonths="visibleMonths"
+          :hideEmptyMonthColumns="hideEmptyMonthColumns"
+          :getCodeSum="getCodeSum"
+          :getGroupTotal="getGroupTotal"
           :sumIncomeRutin="sumPenerimaanRutin"
           :sumIncomeNonRutin="sumPenerimaanTidakRutin"
           :grandTotalIncome="grandTotalIncome"
@@ -96,10 +97,12 @@
           @select-detail="setDetailAccount"
           @export-excel="exportFullExcel"
           @download-bundle="downloadFullReportBundle"
+          @change-mode="periodMode = $event"
+          @toggle-empty-months="hideEmptyMonthColumns = !hideEmptyMonthColumns"
         />
       </div>
 
-      <!-- ================= 2. TAB KHUSUS DAFTAR ULANG & PRIORITAS ================= -->
+      <!-- ================= 2. TAB DAFTAR ULANG & PRIORITAS ================= -->
       <div v-else-if="activeTab === 'daftar-ulang'">
         <TabDaftarUlang />
       </div>
@@ -125,9 +128,11 @@
           </div>
 
           <div class="text-right">
-            <span class="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Total Pos Ini:</span>
+            <span class="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+              Total Pos ({{ activePeriodLabel }}):
+            </span>
             <span class="text-sm font-mono font-bold text-slate-900">
-              {{ formatIDR(getSumForCode(selectedAccountDetail.code)) }}
+              {{ formatIDR(getCodeSum(selectedAccountDetail.code)) }}
             </span>
           </div>
         </div>
@@ -239,7 +244,7 @@
                   </td>
                 </tr>
                 <tr v-if="filteredDetailTransactions.length === 0">
-                  <td colspan="7" class="p-8 text-center text-slate-400">Tidak ada transaksi pada pos ini.</td>
+                  <td colspan="7" class="p-8 text-center text-slate-400">Tidak ada transaksi pada pos ini untuk periode {{ activePeriodLabel }}.</td>
                 </tr>
               </tbody>
             </table>
@@ -251,32 +256,49 @@
       <div v-else-if="activeTab === 'upload'">
         <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
           
-          <!-- Section 1: Periode Laporan -->
+          <!-- Section 1: Pengaturan Periode Aktif -->
           <div>
-            <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2">1. Pilih Periode Laporan</h2>
-            <div class="flex gap-2.5">
-              <select v-model.number="selectedMonth" class="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50 font-bold outline-none cursor-pointer focus:border-emerald-500">
-                <option v-for="(name, idx) in MONTH_NAMES.slice(1)" :key="idx" :value="idx + 1">{{ name }}</option>
-              </select>
-              <select v-model.number="selectedYear" class="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50 font-bold outline-none cursor-pointer focus:border-emerald-500">
-                <option :value="2025">2025</option>
-                <option :value="2026">2026</option>
-                <option :value="2027">2027</option>
-              </select>
+            <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">1. Periode & Tahun Ajaran</h2>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <!-- Single Month Selector -->
+              <div class="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                <span class="text-xs font-bold text-slate-800 block">Pilih Bulan Tunggal</span>
+                <div class="flex gap-2">
+                  <select v-model.number="selectedMonth" class="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white font-bold outline-none cursor-pointer focus:border-emerald-500 w-1/2">
+                    <option v-for="(name, idx) in MONTH_NAMES.slice(1)" :key="idx" :value="idx + 1">{{ name }}</option>
+                  </select>
+                  <select v-model.number="selectedYear" class="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white font-bold outline-none cursor-pointer focus:border-emerald-500 w-1/2">
+                    <option :value="2025">2025</option>
+                    <option :value="2026">2026</option>
+                    <option :value="2027">2027</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Academic Year Selector -->
+              <div class="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                <span class="text-xs font-bold text-slate-800 block">Pilih Tahun Ajaran (Matriks Bulanan)</span>
+                <select v-model.number="selectedAcademicYear" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white font-bold outline-none cursor-pointer focus:border-emerald-500">
+                  <option :value="2025">T.A. 2025/2026 (Juli 2025 – Juni 2026)</option>
+                  <option :value="2026">T.A. 2026/2027 (Juli 2026 – Juni 2027)</option>
+                  <option :value="2027">T.A. 2027/2028 (Juli 2027 – Juni 2028)</option>
+                </select>
+              </div>
             </div>
           </div>
 
-          <!-- Section 2: Upload Excel Berurutan -->
+          <!-- Section 2: Upload Excel -->
           <div class="border-t border-slate-200 pt-5">
             <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
-              2. Upload Sumber Data Excel (Sesuai Urutan)
+              2. Upload Sumber Data Excel
             </h2>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
               
-              <!-- 1. Monitoring Pengeluaran -->
+              <!-- Pengeluaran -->
               <div class="border-2 border-dashed rounded-2xl p-4 transition" :class="filesStatus.pengeluaran.uploaded ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-300 bg-slate-50/50'">
                 <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-bold text-slate-900">1. Monitoring Pengeluaran</span>
+                  <span class="text-xs font-bold text-slate-900">1. Pengeluaran (Kas Kecil)</span>
                   <span v-if="filesStatus.pengeluaran.uploaded" class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
                     Terpasang ✓ ({{ filesStatus.pengeluaran.count }})
                   </span>
@@ -290,10 +312,10 @@
                 </label>
               </div>
 
-              <!-- 2. Penerimaan 16 Kolom (WAJIB PERTAMA) -->
+              <!-- Penerimaan -->
               <div class="border-2 border-dashed rounded-2xl p-4 transition" :class="filesStatus.penerimaan.uploaded ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-300 bg-slate-50/50'">
                 <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-bold text-slate-900">2. Penerimaan Kasir (Langkah 1)</span>
+                  <span class="text-xs font-bold text-slate-900">2. Penerimaan Kasir</span>
                   <span v-if="filesStatus.penerimaan.uploaded" class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
                     Terpasang ✓ ({{ filesStatus.penerimaan.count }})
                   </span>
@@ -307,15 +329,15 @@
                 </label>
               </div>
 
-              <!-- 3. File Tagihan Daftar Ulang (LANGKAH 2 -> AUTO-SPLIT) -->
+              <!-- Tagihan DU -->
               <div class="border-2 border-dashed rounded-2xl p-4 transition" :class="filesStatus.tagihanDU.uploaded ? 'border-indigo-400 bg-indigo-50/20' : 'border-slate-300 bg-slate-50/50'">
                 <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-bold text-slate-900">3. Tagihan DU (Langkah 2)</span>
+                  <span class="text-xs font-bold text-slate-900">3. Tagihan DU (Auto-Split)</span>
                   <span v-if="filesStatus.tagihanDU.uploaded" class="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200">
                     Auto-Split ✓ ({{ filesStatus.tagihanDU.count }})
                   </span>
                   <span v-else class="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">
-                    Auto-Split Aktif
+                    Auto-Split Siap
                   </span>
                 </div>
                 <p v-if="filesStatus.tagihanDU.uploaded" class="text-[11px] text-indigo-700 font-mono truncate mb-2">
@@ -330,7 +352,7 @@
             </div>
           </div>
 
-          <!-- Section 3: RESTORE DATA DARI BACKUP JSON (PROMINENT CARD) -->
+          <!-- Section 3: Restore JSON -->
           <div class="border-t border-slate-200 pt-5">
             <div class="bg-gradient-to-r from-indigo-50 to-indigo-100/60 border-2 border-dashed border-indigo-300 rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div class="flex items-start sm:items-center gap-3.5">
@@ -342,7 +364,7 @@
                     Restore Data Keseluruhan dari Backup (.json)
                   </h3>
                   <p class="text-[11px] text-slate-600 mt-0.5 max-w-xl">
-                    Pulihkan seluruh kondisi sistem (transaksi penerimaan, pengeluaran, master santri daftar ulang, serta skema tarif) hanya dalam 1 klik.
+                    Pulihkan seluruh transaksi, master santri daftar ulang, serta skema tarif hanya dalam 1 klik.
                   </p>
                 </div>
               </div>
@@ -354,7 +376,7 @@
             </div>
           </div>
 
-          <!-- Section 4: Footer Aksi -->
+          <!-- Section 4: Footer -->
           <div class="border-t border-slate-200 pt-4 flex items-center justify-between">
             <button @click="clearAllData" class="text-xs text-rose-600 hover:underline font-semibold cursor-pointer">
               Bersihkan Semua Data
@@ -461,12 +483,17 @@ import { useFinance } from './composables/useFinance.js';
 import { formatIDR } from './utils/formatters.js';
 
 const {
-  transactions,
-  filesStatus,
+  periodMode,
   selectedMonth,
   selectedYear,
+  selectedAcademicYear,
+  hideEmptyMonthColumns,
   MONTH_NAMES,
   activePeriodLabel,
+  visibleMonths,
+  transactions,
+  filteredTransactionsByPeriod,
+  filesStatus,
   activeTab,
   selectedAccountDetail,
   isLoading,
@@ -487,7 +514,8 @@ const {
   deleteTransaction,
   deleteMassTransactions,
   getTransactionsForCode,
-  getSumForCode,
+  getCodeSum,
+  getGroupTotal,
   sumPenerimaanRutin,
   sumPenerimaanTidakRutin,
   grandTotalIncome,
