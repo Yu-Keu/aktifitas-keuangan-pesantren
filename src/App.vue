@@ -1,3 +1,4 @@
+<!-- src/App.vue -->
 <template>
   <div class="min-h-screen bg-slate-100/70 text-slate-800 antialiased font-sans flex flex-col">
     <!-- Overlay Loader -->
@@ -32,12 +33,12 @@
 
         <div class="bg-slate-50 rounded-lg p-3 text-xs space-y-1.5 border border-slate-200/70">
           <div class="flex justify-between text-slate-600">
-            <span>Transaksi Dimuat:</span>
-            <span class="font-mono font-bold text-slate-900">{{ uploadResultModal.loadedCount }} baris</span>
+            <span>Baris Dimuat:</span>
+            <span class="font-mono font-bold text-slate-900">{{ uploadResultModal.loadedCount }}</span>
           </div>
           <div class="flex justify-between text-slate-600">
-            <span>Dilewati (Beda Periode):</span>
-            <span class="font-mono text-slate-500">{{ uploadResultModal.skippedCount }} baris</span>
+            <span>Dilewati / Dilindungi:</span>
+            <span class="font-mono text-slate-500">{{ uploadResultModal.skippedCount }}</span>
           </div>
           <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
             {{ uploadResultModal.message }}
@@ -55,7 +56,7 @@
       </div>
     </div>
 
-    <!-- Modal Reassign POS (Single & Mass Pop-up Search) -->
+    <!-- Modal Reassign POS -->
     <ModalReassignCoa
       :isOpen="isReassignModalOpen"
       :targetIds="reassignTargetIds"
@@ -65,7 +66,7 @@
       @select-coa="handleConfirmReassign"
     />
 
-    <!-- Modal Split Transaksi -->
+    <!-- Modal Split Transaksi Manual -->
     <ModalSplit
       :isOpen="isSplitModalOpen"
       :transaction="targetSplitTransaction"
@@ -79,7 +80,7 @@
 
     <main class="flex-grow max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
       
-      <!-- ================= 1. TAB LAPORAN UTAMA ================= -->
+      <!-- ================= 1. TAB LAPORAN AKTIVITAS ================= -->
       <div v-if="activeTab === 'report'">
         <ActivityReportTable
           :structure="REPORT_STRUCTURE"
@@ -92,16 +93,19 @@
           :sumExpenseNonRutin="sumBebanTidakRutin"
           :grandTotalExpense="grandTotalExpense"
           :surplusDeficit="surplusDeficit"
-          @open-upload="activeTab = 'upload'"
           @select-detail="setDetailAccount"
           @export-excel="exportFullExcel"
+          @download-bundle="downloadFullReportBundle"
         />
       </div>
 
-      <!-- ================= 2. TAB DETAIL TRANSAKSI (MINI-EXCEL DENGAN MASS REASSIGN & SEARCH) ================= -->
+      <!-- ================= 2. TAB KHUSUS DAFTAR ULANG & PRIORITAS ================= -->
+      <div v-else-if="activeTab === 'daftar-ulang'">
+        <TabDaftarUlang />
+      </div>
+
+      <!-- ================= 3. TAB DETAIL TRANSAKSI ================= -->
       <div v-else-if="activeTab === 'detail' && selectedAccountDetail" class="space-y-3">
-        
-        <!-- Header Rincian Pos -->
         <div class="sticky top-12 z-20 bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl p-3 shadow-sm flex items-center justify-between gap-4">
           <div class="flex items-center gap-3">
             <button
@@ -128,11 +132,8 @@
           </div>
         </div>
 
-        <!-- Filter & Batch Action Toolbar -->
         <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
-          
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <!-- Search Filter Bar -->
             <div class="flex items-center gap-2 flex-1 max-w-md">
               <div class="relative w-full">
                 <input
@@ -150,19 +151,16 @@
               </div>
             </div>
 
-            <!-- Batch Action Buttons -->
             <div v-if="selectedDetailIds.length > 0" class="flex items-center gap-2 animate-in fade-in duration-150">
               <span class="text-xs font-bold text-indigo-900 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
                 {{ selectedDetailIds.length }} Terpilih
               </span>
-              
               <button
                 @click="openMassReassignModal(selectedDetailIds)"
                 class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1"
               >
                 <span>🏷</span> Ganti POS Sekaligus
               </button>
-
               <button
                 @click="batchDelete"
                 class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-2.5 py-1.5 rounded-lg transition cursor-pointer"
@@ -172,12 +170,10 @@
             </div>
           </div>
 
-          <!-- Tabel Interaktif Mini-Excel -->
           <div class="overflow-x-auto border border-slate-200 rounded-lg">
             <table class="min-w-full text-xs divide-y divide-slate-200">
               <thead class="bg-slate-50 font-semibold text-slate-600 text-left">
                 <tr>
-                  <!-- Checkbox Select All -->
                   <th class="px-3 py-2 w-10 text-center">
                     <input
                       type="checkbox"
@@ -201,7 +197,6 @@
                   class="hover:bg-slate-50 transition"
                   :class="{ 'bg-indigo-50/30': selectedDetailIds.includes(t.id), 'bg-amber-50/40': t.isSplitItem }"
                 >
-                  <!-- Checkbox Baris -->
                   <td class="px-3 py-2 text-center">
                     <input
                       type="checkbox"
@@ -210,22 +205,17 @@
                       class="rounded border-slate-300 text-indigo-600 focus:ring-0 cursor-pointer"
                     />
                   </td>
-
                   <td class="px-3 py-2 font-mono text-slate-600 whitespace-nowrap">{{ t.date }}</td>
-                  
-                  <!-- Tombol Pop-up Reassign POS -->
                   <td class="px-3 py-2">
                     <button
                       @click="openReassignModal(t)"
                       class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono font-bold text-xs transition cursor-pointer hover:shadow-xs group"
                       :class="t.code.startsWith('A') ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100' : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'"
-                      title="Klik untuk mencari & mengganti POS"
                     >
                       <span>{{ t.code }}</span>
                       <span class="text-[9px] text-slate-400 group-hover:text-slate-700">🔍</span>
                     </button>
                   </td>
-
                   <td class="px-3 py-2">
                     <input
                       type="text"
@@ -233,35 +223,23 @@
                       class="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-emerald-500 focus:bg-white px-1 py-0.5 rounded text-xs text-slate-900 font-medium outline-none"
                     />
                   </td>
-
                   <td class="px-3 py-2 text-slate-500 text-[11px]">{{ t.pic }} ({{ t.pos }})</td>
-
                   <td class="px-3 py-2 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
                     {{ formatIDR(t.amount) }}
                   </td>
-
                   <td class="px-3 py-2 text-center space-x-1.5 whitespace-nowrap">
                     <button
                       @click="openSplitModal(t)"
                       class="text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded transition cursor-pointer"
-                      title="Pecah nominal transaksi ini"
-                    >
-                      Split
-                    </button>
+                    >Split</button>
                     <button
                       @click="deleteTransaction(t.id)"
                       class="text-[10px] font-bold text-rose-600 hover:bg-rose-50 px-1.5 py-0.5 rounded transition cursor-pointer"
-                      title="Hapus baris"
-                    >
-                      ✕
-                    </button>
+                    >✕</button>
                   </td>
                 </tr>
-
                 <tr v-if="filteredDetailTransactions.length === 0">
-                  <td colspan="7" class="p-8 text-center text-slate-400">
-                    Tidak ada transaksi yang cocok pada pos ini.
-                  </td>
+                  <td colspan="7" class="p-8 text-center text-slate-400">Tidak ada transaksi pada pos ini.</td>
                 </tr>
               </tbody>
             </table>
@@ -269,16 +247,18 @@
         </div>
       </div>
 
-      <!-- ================= 3. TAB UPLOAD & PERIODE ================= -->
+      <!-- ================= 4. TAB UPLOAD & PERIODE ================= -->
       <div v-else-if="activeTab === 'upload'">
-        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-5">
+        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
+          
+          <!-- Section 1: Periode Laporan -->
           <div>
-            <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wide mb-2">1. Pilih Periode Laporan</h2>
-            <div class="flex gap-2">
-              <select v-model.number="selectedMonth" class="border border-slate-200 rounded-lg px-3 py-1.5 text-xs bg-slate-50 font-semibold outline-none cursor-pointer">
+            <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2">1. Pilih Periode Laporan</h2>
+            <div class="flex gap-2.5">
+              <select v-model.number="selectedMonth" class="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50 font-bold outline-none cursor-pointer focus:border-emerald-500">
                 <option v-for="(name, idx) in MONTH_NAMES.slice(1)" :key="idx" :value="idx + 1">{{ name }}</option>
               </select>
-              <select v-model.number="selectedYear" class="border border-slate-200 rounded-lg px-3 py-1.5 text-xs bg-slate-50 font-semibold outline-none cursor-pointer">
+              <select v-model.number="selectedYear" class="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50 font-bold outline-none cursor-pointer focus:border-emerald-500">
                 <option :value="2025">2025</option>
                 <option :value="2026">2026</option>
                 <option :value="2027">2027</option>
@@ -286,65 +266,109 @@
             </div>
           </div>
 
-          <div class="border-t border-slate-200 pt-4">
-            <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wide mb-3">2. Upload Sumber Data Excel (.xlsx / .csv)</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Section 2: Upload Excel Berurutan -->
+          <div class="border-t border-slate-200 pt-5">
+            <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
+              2. Upload Sumber Data Excel (Sesuai Urutan)
+            </h2>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
               
-              <!-- Monitoring Pengeluaran -->
-              <div class="border-2 border-dashed rounded-xl p-4 transition" :class="filesStatus.pengeluaran.uploaded ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'">
+              <!-- 1. Monitoring Pengeluaran -->
+              <div class="border-2 border-dashed rounded-2xl p-4 transition" :class="filesStatus.pengeluaran.uploaded ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-300 bg-slate-50/50'">
                 <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-bold text-slate-900">Monitoring Pengeluaran</span>
+                  <span class="text-xs font-bold text-slate-900">1. Monitoring Pengeluaran</span>
                   <span v-if="filesStatus.pengeluaran.uploaded" class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
-                    Terpasang ✓ ({{ filesStatus.pengeluaran.count }} baris)
-                  </span>
-                  <span v-else class="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">
-                    Belum Diunggah
+                    Terpasang ✓ ({{ filesStatus.pengeluaran.count }})
                   </span>
                 </div>
                 <p v-if="filesStatus.pengeluaran.uploaded" class="text-[11px] text-emerald-700 font-mono truncate mb-2">
                   {{ filesStatus.pengeluaran.fileName }}
                 </p>
-                <label class="block text-center cursor-pointer bg-white border border-slate-200 hover:border-emerald-500 py-2.5 rounded-lg text-xs font-semibold text-slate-700 transition">
+                <label class="block text-center cursor-pointer bg-white border border-slate-200 hover:border-emerald-500 py-2.5 rounded-xl text-xs font-bold text-slate-700 transition">
                   <input type="file" accept=".xlsx,.xls,.csv" @change="onUpload($event, 'pengeluaran')" class="hidden" />
-                  <span>{{ filesStatus.pengeluaran.uploaded ? 'Ganti File Pengeluaran' : 'Pilih File Kas Kecil (.xlsx)' }}</span>
+                  <span>{{ filesStatus.pengeluaran.uploaded ? 'Ganti File' : 'Upload Kas Kecil (.xlsx)' }}</span>
                 </label>
               </div>
 
-              <!-- Laporan Penerimaan -->
-              <div class="border-2 border-dashed rounded-xl p-4 transition" :class="filesStatus.penerimaan.uploaded ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'">
+              <!-- 2. Penerimaan 16 Kolom (WAJIB PERTAMA) -->
+              <div class="border-2 border-dashed rounded-2xl p-4 transition" :class="filesStatus.penerimaan.uploaded ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-300 bg-slate-50/50'">
                 <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-bold text-slate-900">Penerimaan Siswa & SPP</span>
+                  <span class="text-xs font-bold text-slate-900">2. Penerimaan Kasir (Langkah 1)</span>
                   <span v-if="filesStatus.penerimaan.uploaded" class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
-                    Terpasang ✓ ({{ filesStatus.penerimaan.count }} baris)
-                  </span>
-                  <span v-else class="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">
-                    Belum Diunggah
+                    Terpasang ✓ ({{ filesStatus.penerimaan.count }})
                   </span>
                 </div>
                 <p v-if="filesStatus.penerimaan.uploaded" class="text-[11px] text-emerald-700 font-mono truncate mb-2">
                   {{ filesStatus.penerimaan.fileName }}
                 </p>
-                <label class="block text-center cursor-pointer bg-white border border-slate-200 hover:border-emerald-500 py-2.5 rounded-lg text-xs font-semibold text-slate-700 transition">
+                <label class="block text-center cursor-pointer bg-white border border-slate-200 hover:border-emerald-500 py-2.5 rounded-xl text-xs font-bold text-slate-700 transition">
                   <input type="file" accept=".xlsx,.xls,.csv" @change="onUpload($event, 'penerimaan')" class="hidden" />
-                  <span>{{ filesStatus.penerimaan.uploaded ? 'Ganti File Penerimaan' : 'Pilih File Penerimaan (.xlsx)' }}</span>
+                  <span>{{ filesStatus.penerimaan.uploaded ? 'Ganti File' : 'Upload Penerimaan (.xlsx)' }}</span>
+                </label>
+              </div>
+
+              <!-- 3. File Tagihan Daftar Ulang (LANGKAH 2 -> AUTO-SPLIT) -->
+              <div class="border-2 border-dashed rounded-2xl p-4 transition" :class="filesStatus.tagihanDU.uploaded ? 'border-indigo-400 bg-indigo-50/20' : 'border-slate-300 bg-slate-50/50'">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-bold text-slate-900">3. Tagihan DU (Langkah 2)</span>
+                  <span v-if="filesStatus.tagihanDU.uploaded" class="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200">
+                    Auto-Split ✓ ({{ filesStatus.tagihanDU.count }})
+                  </span>
+                  <span v-else class="bg-slate-100 text-slate-500 text-[10px] font-medium px-2 py-0.5 rounded-full">
+                    Auto-Split Aktif
+                  </span>
+                </div>
+                <p v-if="filesStatus.tagihanDU.uploaded" class="text-[11px] text-indigo-700 font-mono truncate mb-2">
+                  {{ filesStatus.tagihanDU.fileName }}
+                </p>
+                <label class="block text-center cursor-pointer bg-white border border-slate-200 hover:border-indigo-500 py-2.5 rounded-xl text-xs font-bold text-slate-700 transition">
+                  <input type="file" accept=".xlsx,.xls" @change="onUpload($event, 'tagihan_du')" class="hidden" />
+                  <span>{{ filesStatus.tagihanDU.uploaded ? 'Ganti Tagihan (Re-Split)' : 'Upload Tagihan DU (.xlsx)' }}</span>
                 </label>
               </div>
 
             </div>
           </div>
 
-          <div class="border-t border-slate-200 pt-3 flex items-center justify-between">
+          <!-- Section 3: RESTORE DATA DARI BACKUP JSON (PROMINENT CARD) -->
+          <div class="border-t border-slate-200 pt-5">
+            <div class="bg-gradient-to-r from-indigo-50 to-indigo-100/60 border-2 border-dashed border-indigo-300 rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div class="flex items-start sm:items-center gap-3.5">
+                <div class="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
+                  🔄
+                </div>
+                <div>
+                  <h3 class="font-bold text-slate-900 text-xs uppercase tracking-wide">
+                    Restore Data Keseluruhan dari Backup (.json)
+                  </h3>
+                  <p class="text-[11px] text-slate-600 mt-0.5 max-w-xl">
+                    Pulihkan seluruh kondisi sistem (transaksi penerimaan, pengeluaran, master santri daftar ulang, serta skema tarif) hanya dalam 1 klik.
+                  </p>
+                </div>
+              </div>
+
+              <label class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-xs whitespace-nowrap flex items-center gap-1.5 shrink-0">
+                <span>📂</span> Pilih File Backup .json
+                <input type="file" accept=".json" class="hidden" @change="handleRestoreJSON" />
+              </label>
+            </div>
+          </div>
+
+          <!-- Section 4: Footer Aksi -->
+          <div class="border-t border-slate-200 pt-4 flex items-center justify-between">
             <button @click="clearAllData" class="text-xs text-rose-600 hover:underline font-semibold cursor-pointer">
               Bersihkan Semua Data
             </button>
-            <button @click="activeTab = 'report'" class="text-xs font-semibold bg-slate-900 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition cursor-pointer">
-              Lihat Laporan &rarr;
+
+            <button @click="activeTab = 'report'" class="text-xs font-bold bg-slate-900 text-white px-5 py-2.5 rounded-xl hover:bg-slate-800 transition cursor-pointer flex items-center gap-1.5">
+              Lihat Laporan Aktivitas &rarr;
             </button>
           </div>
+
         </div>
       </div>
 
-      <!-- ================= 4. TAB SEMUA TRANSAKSI ================= -->
+      <!-- ================= 5. TAB SEMUA TRANSAKSI ================= -->
       <div v-else-if="activeTab === 'all'">
         <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-3">
@@ -379,21 +403,18 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 bg-white">
-                <tr v-for="t in filteredAllTransactions" :key="t.id" class="hover:bg-slate-50">
+                <tr v-for="t in filteredAllTransactions" :key="t.id" class="hover:bg-slate-50" :class="{ 'bg-amber-50/40': t.isSplitItem }">
                   <td class="px-3 py-2 font-mono text-slate-600 whitespace-nowrap">{{ t.date }}</td>
-                  
                   <td class="px-3 py-2">
                     <button
                       @click="openReassignModal(t)"
                       class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border font-mono font-bold text-[11px] transition cursor-pointer hover:shadow-xs group"
                       :class="t.code.startsWith('A') ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100' : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'"
-                      title="Klik untuk mencari & mengganti POS"
                     >
                       <span>{{ t.code }}</span>
                       <span class="text-[9px] text-slate-400 group-hover:text-slate-700">🔍</span>
                     </button>
                   </td>
-
                   <td class="px-3 py-2 text-slate-900 font-medium">{{ t.desc }}</td>
                   <td class="px-3 py-2 text-slate-600">{{ t.pic }}</td>
                   <td class="px-3 py-2 text-center">
@@ -405,20 +426,15 @@
                     </span>
                   </td>
                   <td class="px-3 py-2 text-right font-mono font-semibold whitespace-nowrap">{{ formatIDR(t.amount) }}</td>
-                  
                   <td class="px-3 py-2 text-center space-x-1.5 whitespace-nowrap">
                     <button
                       @click="openSplitModal(t)"
                       class="text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded transition cursor-pointer"
-                    >
-                      Split
-                    </button>
+                    >Split</button>
                     <button
                       @click="deleteTransaction(t.id)"
                       class="text-[10px] font-bold text-rose-600 hover:bg-rose-50 px-1.5 py-0.5 rounded transition cursor-pointer"
-                    >
-                      ✕
-                    </button>
+                    >✕</button>
                   </td>
                 </tr>
                 <tr v-if="filteredAllTransactions.length === 0">
@@ -438,6 +454,7 @@
 import { ref, computed, watch } from 'vue';
 import HeaderNav from './components/HeaderNav.vue';
 import ActivityReportTable from './components/ActivityReportTable.vue';
+import TabDaftarUlang from './components/TabDaftarUlang.vue';
 import ModalSplit from './components/ModalSplit.vue';
 import ModalReassignCoa from './components/ModalReassignCoa.vue';
 import { useFinance } from './composables/useFinance.js';
@@ -482,7 +499,9 @@ const {
   setDetailAccount,
   backToReport,
   clearAllData,
-  exportFullExcel
+  exportFullExcel,
+  downloadFullReportBundle,
+  restoreSystemFromJSON
 } = useFinance();
 
 const searchQuery = ref('');
@@ -550,5 +569,17 @@ async function onUpload(event, type) {
   } finally {
     event.target.value = '';
   }
+}
+
+async function handleRestoreJSON(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    await restoreSystemFromJSON(file);
+    alert('Seluruh data transaksi, rincian santri, dan skema tarif berhasil dipulihkan secara lengkap!');
+  } catch (err) {
+    alert('Gagal memulihkan data: ' + err.message);
+  }
+  e.target.value = '';
 }
 </script>

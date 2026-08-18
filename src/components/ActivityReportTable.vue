@@ -1,32 +1,26 @@
+<!-- src/components/ActivityReportTable.vue -->
 <template>
   <div class="bg-white border border-slate-300 rounded-lg p-6 shadow-xs space-y-4 print:border-none print:shadow-none print:p-0">
     
-    <!-- Top Action Bar -->
+    <!-- Top Action Bar (Clean & Professional) -->
     <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 print:hidden text-xs">
       <div class="flex items-center gap-3">
         <label class="inline-flex items-center gap-1.5 cursor-pointer font-medium text-slate-700 select-none">
           <input type="checkbox" v-model="hideZeroRows" class="rounded border-slate-300 text-slate-800 focus:ring-0 cursor-pointer" />
           <span>Sembunyikan Pos Rp 0</span>
         </label>
-        <span class="text-slate-400">|</span>
-        <span class="text-slate-500 font-medium hidden sm:inline">
-          💡 Klik baris pos akun untuk membuka rincian transaksi & reassign/split
-        </span>
       </div>
 
       <div class="flex items-center gap-2">
+        <!-- TOMBOL DOWNLOAD PAKET LAPORAN (ZIP BUNDLE) -->
         <button
-          @click="$emit('export-excel')"
-          class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-md font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+          @click="$emit('download-bundle')"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-md font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+          title="Download Paket ZIP: Excel Laporan + Excel Rincian Santri + Backup JSON"
         >
-          <span>📊</span> Download Excel (Multi-Sheet)
+          <span>📦</span> Download Paket Laporan (.zip)
         </button>
-        <button
-          @click="$emit('open-upload')"
-          class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md font-semibold transition cursor-pointer"
-        >
-          Ganti Periode & File
-        </button>
+
         <button
           @click="printWindow"
           class="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-md font-semibold transition cursor-pointer"
@@ -72,7 +66,6 @@
               v-if="group.items.length === 1"
               @click="$emit('select-detail', group.items[0])"
               class="hover:bg-emerald-50/60 cursor-pointer transition group"
-              title="Klik untuk membuka rincian pos ini"
             >
               <td class="px-3 py-1.5 font-medium text-slate-800 group-hover:text-emerald-900">
                 <span class="inline-flex items-center gap-1">
@@ -103,7 +96,6 @@
                 :key="item.code"
                 @click="$emit('select-detail', item)"
                 class="hover:bg-emerald-50/60 cursor-pointer transition text-[11px] group"
-                title="Klik untuk membuka rincian pos ini"
               >
                 <td class="px-3 py-1 pl-6 text-slate-400 group-hover:text-emerald-500">↳</td>
                 <td class="px-2 py-1 text-center font-mono text-slate-600 group-hover:text-emerald-700 font-semibold">{{ item.code }}</td>
@@ -137,7 +129,6 @@
               v-if="group.items.length === 1"
               @click="$emit('select-detail', group.items[0])"
               class="hover:bg-emerald-50/60 cursor-pointer transition group"
-              title="Klik untuk membuka rincian pos ini"
             >
               <td class="px-3 py-1.5 font-medium text-slate-800 group-hover:text-emerald-900">
                 <span class="inline-flex items-center gap-1">
@@ -168,7 +159,6 @@
                 :key="item.code"
                 @click="$emit('select-detail', item)"
                 class="hover:bg-emerald-50/60 cursor-pointer transition text-[11px] group"
-                title="Klik untuk membuka rincian pos ini"
               >
                 <td class="px-3 py-1 pl-6 text-slate-400 group-hover:text-emerald-500">↳</td>
                 <td class="px-2 py-1 text-center font-mono text-slate-600 group-hover:text-emerald-700 font-semibold">{{ item.code }}</td>
@@ -216,7 +206,6 @@
               v-if="group.items.length === 1"
               @click="$emit('select-detail', group.items[0])"
               class="hover:bg-rose-50/60 cursor-pointer transition group"
-              title="Klik untuk membuka rincian pos ini"
             >
               <td class="px-3 py-1.5 font-medium text-slate-800 group-hover:text-rose-900">
                 <span class="inline-flex items-center gap-1">
@@ -247,7 +236,6 @@
                 :key="item.code"
                 @click="$emit('select-detail', item)"
                 class="hover:bg-rose-50/60 cursor-pointer transition text-[11px] group"
-                title="Klik untuk membuka rincian pos ini"
               >
                 <td class="px-3 py-1 pl-6 text-slate-400 group-hover:text-rose-500">↳</td>
                 <td class="px-2 py-1 text-center font-mono text-slate-600 group-hover:text-rose-700 font-semibold">{{ item.code }}</td>
@@ -281,7 +269,6 @@
               v-if="group.items.length === 1"
               @click="$emit('select-detail', group.items[0])"
               class="hover:bg-rose-50/60 cursor-pointer transition group"
-              title="Klik untuk membuka rincian pos ini"
             >
               <td class="px-3 py-1.5 font-medium text-slate-800 group-hover:text-rose-900">
                 <span class="inline-flex items-center gap-1">
@@ -312,7 +299,6 @@
                 :key="item.code"
                 @click="$emit('select-detail', item)"
                 class="hover:bg-rose-50/60 cursor-pointer transition text-[11px] group"
-                title="Klik untuk membuka rincian pos ini"
               >
                 <td class="px-3 py-1 pl-6 text-slate-400 group-hover:text-rose-500">↳</td>
                 <td class="px-2 py-1 text-center font-mono text-slate-600 group-hover:text-rose-700 font-semibold">{{ item.code }}</td>
@@ -376,7 +362,7 @@ const props = defineProps({
   surplusDeficit: Number
 });
 
-defineEmits(['open-upload', 'select-detail', 'export-excel']);
+defineEmits(['select-detail', 'export-excel', 'download-bundle']);
 
 const hideZeroRows = ref(false);
 

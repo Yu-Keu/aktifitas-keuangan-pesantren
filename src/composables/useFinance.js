@@ -1,9 +1,12 @@
+// src/composables/useFinance.js
 import { ref, computed, nextTick } from 'vue';
 import * as XLSX from 'xlsx';
 import { REPORT_STRUCTURE } from '../constants/reportStructure.js';
 import { MASTER_COA_LIST } from '../constants/coa.js';
 import { routeIncomeItem } from '../utils/classClassifier.js';
 import { parseExcelDate, parseAmount, formatIDR } from '../utils/formatters.js';
+import { useDaftarUlang } from './useDaftarUlang.js';
+import { buildDaftarUlangFullExcel, downloadReportBundleZip } from '../utils/exportBundle.js';
 
 export function useFinance() {
   const activeTab = ref('report');
@@ -11,9 +14,19 @@ export function useFinance() {
   const loadingStatus = ref('');
   const savedScrollPosition = ref(0);
 
+  const {
+    presets,
+    studentMasterList,
+    fullBreakdownRows,
+    savePresets,
+    parseTagihanSheet,
+    runWaterfallSplit
+  } = useDaftarUlang();
+
   const filesStatus = ref({
     pengeluaran: { uploaded: false, fileName: '', count: 0 },
-    penerimaan: { uploaded: false, fileName: '', count: 0 }
+    penerimaan: { uploaded: false, fileName: '', count: 0 },
+    tagihanDU: { uploaded: false, fileName: '', count: 0 }
   });
 
   const uploadResultModal = ref({
@@ -26,7 +39,7 @@ export function useFinance() {
     message: ''
   });
 
-  // Modal State
+  // Modal States
   const isSplitModalOpen = ref(false);
   const targetSplitTransaction = ref(null);
 
@@ -67,13 +80,15 @@ export function useFinance() {
   function clearAllData() {
     if (confirm('Kosongkan semua data transaksi yang sudah dimuat?')) {
       transactions.value = [];
+      studentMasterList.value = [];
       selectedAccountDetail.value = null;
       filesStatus.value.pengeluaran = { uploaded: false, fileName: '', count: 0 };
       filesStatus.value.penerimaan = { uploaded: false, fileName: '', count: 0 };
+      filesStatus.value.tagihanDU = { uploaded: false, fileName: '', count: 0 };
     }
   }
 
-  // REASSIGN POS (MODAL SEARCH)
+  // REASSIGN POS
   function openReassignModal(item) {
     singleReassignTransaction.value = item;
     reassignTargetIds.value = [item.id];
@@ -136,8 +151,21 @@ export function useFinance() {
     targetSplitTransaction.value = null;
   }
 
-  // PARSER EXCEL 16-KOLOM STANDAR
+  // AUTO-SPLIT WATERFALL OTOMATIS
+  function executeAutoSplitDaftarUlang() {
+    const result = runWaterfallSplit(transactions.value);
+    transactions.value = result.updatedTransactions;
+    return result;
+  }
+
+  // PARSER EXCEL DINAMIS & EKSEKUSI OTOMATIS
   async function processExcelFile(file, type) {
+    // Validasi Urutan Upload: Penerimaan Harus Sebelum Tagihan Daftar Ulang
+    if (type === 'tagihan_du' && !filesStatus.value.penerimaan.uploaded) {
+      alert('Perhatian: Harap upload File Penerimaan (16 Kolom) terlebih dahulu agar data transaksi kasir dapat otomatis dicocokkan dan di-split.');
+      return;
+    }
+
     isLoading.value = true;
     loadingStatus.value = `Membaca file ${file.name}...`;
 
@@ -149,6 +177,37 @@ export function useFinance() {
           const data = new Uint8Array(e.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
 
+          // ---------------------------------------------------------
+          // A. FILE TAGIHAN DAFTAR ULANG -> LANGSUNG AUTO-SPLIT OTOMATIS
+          // ---------------------------------------------------------
+          if (type === 'tagihan_du') {
+            const ws = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+            const count = parseTagihanSheet(rows);
+
+            filesStatus.value.tagihanDU = {
+              uploaded: true,
+              fileName: file.name,
+              count
+            };
+
+            // EKSEKUSI LANGSUNG AUTO SPLIT TANPA TOMBOL
+            const splitRes = executeAutoSplitDaftarUlang();
+
+            uploadResultModal.value = {
+              show: true,
+              success: true,
+              title: 'Master Tagihan Terpasang & Ter-Split',
+              fileName: file.name,
+              loadedCount: count,
+              skippedCount: splitRes.skippedPastYearCount,
+              message: `Berhasil memuat ${count} data santri dan otomatis memecah ${splitRes.splitCount} transaksi Daftar Ulang ke pos masing-masing!`
+            };
+
+            resolve({ loadedCount: count, skippedCount: 0 });
+            return;
+          }
+
           let worksheet = null;
           if (type === 'pengeluaran') {
             const kasKecilSheetName = workbook.SheetNames.find(
@@ -159,7 +218,7 @@ export function useFinance() {
             worksheet = workbook.Sheets[workbook.SheetNames[0]];
           }
 
-          if (!worksheet) throw new Error('Sheet data tidak ditemukan di dalam file.');
+          if (!worksheet) throw new Error('Sheet data tidak ditemukan.');
 
           const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
           let loadedCount = 0;
@@ -167,7 +226,7 @@ export function useFinance() {
           const newItems = [];
 
           // ---------------------------------------------------------
-          // A. PENGELUARAN (KAS KECIL)
+          // B. PENGELUARAN (KAS KECIL)
           // ---------------------------------------------------------
           if (type === 'pengeluaran') {
             let headerIdx = 3;
@@ -225,29 +284,78 @@ export function useFinance() {
             };
           } 
           // ---------------------------------------------------------
-          // B. PENERIMAAN SISWA (FORMAT ASLI 16 KOLOM)
+          // C. PENERIMAAN 16 KOLOM
           // ---------------------------------------------------------
           else if (type === 'penerimaan') {
             let headerIdx = 0;
             for (let r = 0; r < Math.min(rows.length, 15); r++) {
               const line = (rows[r] || []).join(' ').toUpperCase();
-              if (line.includes('POS PENERIMAAN') || line.includes('NOMOR TRANSAKSI') || line.includes('NAMA SISWA')) {
+              if (line.includes('POS PENERIMAAN') || line.includes('NOMOR TRANSAKSI') || line.includes('NAMA')) {
                 headerIdx = r;
                 break;
               }
             }
 
+            const headerRow = (rows[headerIdx] || []).map(h => String(h || '').trim().toUpperCase());
+
+            const mapCol = {
+              noTrans: headerRow.findIndex(h => h.includes('NOMOR TRANSAKSI') || h.includes('NO TRANSAKSI')),
+              date: headerRow.findIndex(h => h.includes('TANGGAL') || h.includes('DATE') || h.includes('WAKTU')),
+              bank: headerRow.findIndex(h => h.includes('METODE') || h.includes('BANK') || h.includes('KAS')),
+              pic: headerRow.findIndex(h => h.includes('PETUGAS') || h.includes('KASIR') || h.includes('USER')),
+              nis: headerRow.findIndex(h => h.includes('NIS') || h.includes('INDUK')),
+              nama: headerRow.findIndex(h => h.includes('NAMA')),
+              kelas: headerRow.findIndex(h => h.includes('KELAS') || h.includes('ROMBEL')),
+              pos: headerRow.findIndex(h => h.includes('POS PENERIMAAN') || (h.includes('POS') && !h.includes('PENGELUARAN'))),
+              tapel: headerRow.findIndex(h => h.includes('TAPEL') || h.includes('TAHUN AJARAN')),
+              ketItem: headerRow.findIndex(h => h.includes('KETERANGAN ITEM') || h.includes('JENIS BIAYA') || h.includes('URAIAN') || h.includes('KETERANGAN')),
+              amount: headerRow.findLastIndex(h => h.includes('PENERIMAAN') || h.includes('NOMINAL') || h.includes('JUMLAH') || h.includes('BAYAR') || h.includes('TOTAL'))
+            };
+
             for (let i = headerIdx + 1; i < rows.length; i++) {
               const cols = rows[i];
-              if (!cols || cols.length < 5) continue;
+              if (!cols || cols.length < 3) continue;
 
-              const parsedDate = parseExcelDate(cols[1]);
-              const pic = String(cols[3] || 'Kasir/Bank').trim();
-              const senderOrStudent = String(cols[6] || '').trim();
-              const kelas = String(cols[8] || '').trim();
-              const pos = String(cols[9] || '').trim().toUpperCase();
-              const ketItem = String(cols[14] || cols[13] || pos).trim();
-              const amount = parseAmount(cols[15]);
+              const noTrans = mapCol.noTrans !== -1 ? String(cols[mapCol.noTrans] || '').trim() : String(cols[0] || '').trim();
+              const pic = mapCol.pic !== -1 ? String(cols[mapCol.pic] || 'Kasir/Bank').trim() : 'Kasir/Bank';
+              const bank = mapCol.bank !== -1 ? String(cols[mapCol.bank] || '').trim() : '';
+              const nis = mapCol.nis !== -1 ? String(cols[mapCol.nis] || '').trim() : '';
+              const senderOrStudent = mapCol.nama !== -1 ? String(cols[mapCol.nama] || '').trim() : String(cols[4] || cols[5] || '').trim();
+              const kelas = mapCol.kelas !== -1 ? String(cols[mapCol.kelas] || '').trim() : String(cols[6] || cols[7] || '').trim();
+              const pos = mapCol.pos !== -1 ? String(cols[mapCol.pos] || '').trim().toUpperCase() : String(cols[7] || cols[8] || '').trim().toUpperCase();
+              const tapel = mapCol.tapel !== -1 ? String(cols[mapCol.tapel] || '').trim() : '';
+              const ketItem = mapCol.ketItem !== -1 ? String(cols[mapCol.ketItem] || pos).trim() : pos;
+              
+              let rawAmountVal = mapCol.amount !== -1 ? cols[mapCol.amount] : cols[cols.length - 1];
+              let amount = parseAmount(rawAmountVal);
+
+              if (amount === 0) {
+                for (let c = cols.length - 1; c >= 0; c--) {
+                  const val = parseAmount(cols[c]);
+                  if (val > 0) {
+                    amount = val;
+                    break;
+                  }
+                }
+              }
+
+              let parsedDate = mapCol.date !== -1 ? parseExcelDate(cols[mapCol.date]) : null;
+              if (!parsedDate && noTrans) {
+                const dateMatch = noTrans.match(/(?:SIS|TRX|TX)?(\d{4})(\d{2})(\d{2})/i);
+                if (dateMatch) {
+                  const yr = parseInt(dateMatch[1], 10);
+                  const mo = parseInt(dateMatch[2], 10);
+                  const dy = parseInt(dateMatch[3], 10);
+                  if (yr >= 2020 && yr <= 2035 && mo >= 1 && mo <= 12 && dy >= 1 && dy <= 31) {
+                    parsedDate = {
+                      year: yr,
+                      month: mo,
+                      day: dy,
+                      formatted: `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`
+                    };
+                  }
+                }
+              }
 
               if (amount !== 0 && pos) {
                 if (parsedDate && (parsedDate.month !== selectedMonth.value || parsedDate.year !== selectedYear.value)) {
@@ -259,11 +367,15 @@ export function useFinance() {
 
                 newItems.push({
                   id: `INC-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 5)}`,
-                  date: parsedDate ? parsedDate.formatted : String(cols[1] || ''),
+                  date: parsedDate ? parsedDate.formatted : (noTrans || 'Kasir'),
                   code: routed.kode,
                   pos: pos,
+                  nis: nis,
+                  senderOrStudent: senderOrStudent,
+                  kelas: kelas,
+                  tapel: tapel,
                   desc: `${ketItem} ${senderOrStudent ? `[${senderOrStudent}${kelas ? ` - ${kelas}` : ''}]` : ''}`.trim(),
-                  pic: pic,
+                  pic: `${pic}${bank ? ` (${bank})` : ''}`.trim(),
                   type: 'PENERIMAAN',
                   amount: amount
                 });
@@ -279,6 +391,11 @@ export function useFinance() {
           }
 
           transactions.value.push(...newItems);
+
+          // Jika sebelumnya master tagihan sudah terpasang, langsung lakukan split otomatis
+          if (filesStatus.value.tagihanDU.uploaded) {
+            executeAutoSplitDaftarUlang();
+          }
 
           uploadResultModal.value = {
             show: true,
@@ -316,7 +433,7 @@ export function useFinance() {
     });
   }
 
-  // KALKULASI & EXPORT
+  // KALKULASI
   function getTransactionsForCode(code) {
     return transactions.value.filter(t => t.code === code);
   }
@@ -356,7 +473,8 @@ export function useFinance() {
   const grandTotalExpense = computed(() => sumBebanRutin.value + sumBebanTidakRutin.value);
   const surplusDeficit = computed(() => grandTotalIncome.value - grandTotalExpense.value);
 
-  function exportFullExcel() {
+  // BUILD WORKBOOK LAPORAN AKTIVITAS
+  function generateActivityReportWorkbook() {
     const wb = XLSX.utils.book_new();
 
     const summaryRows = [
@@ -440,8 +558,83 @@ export function useFinance() {
       XLSX.utils.book_append_sheet(wb, wsDetail, sheetName);
     });
 
+    return wb;
+  }
+
+  // 1. Download Standalone Excel Laporan
+  function exportFullExcel() {
+    const wb = generateActivityReportWorkbook();
     const fileName = `Laporan_Keuangan_PIT_${selectedMonth.value}_${selectedYear.value}.xlsx`;
     XLSX.writeFile(wb, fileName);
+  }
+
+  // 2. Download Standalone Excel Rincian Daftar Ulang Semua Santri
+  function exportDaftarUlangExcel() {
+    const wb = buildDaftarUlangFullExcel(fullBreakdownRows.value, activePeriodLabel.value);
+    XLSX.writeFile(wb, `Rincian_Daftar_Ulang_Semua_Santri_PIT_${activePeriodLabel.value.replace(/\s+/g, '_')}.xlsx`);
+  }
+
+  // 3. Download Bundle Arsip Laporan Lengkap (.zip)
+  async function downloadFullReportBundle() {
+    isLoading.value = true;
+    loadingStatus.value = 'Mempersiapkan paket laporan ZIP...';
+    try {
+      const activityWb = generateActivityReportWorkbook();
+      const duWb = fullBreakdownRows.value.length > 0
+        ? buildDaftarUlangFullExcel(fullBreakdownRows.value, activePeriodLabel.value)
+        : null;
+
+      const fullState = {
+        appVersion: '2.0.0',
+        exportedAt: new Date().toISOString(),
+        period: { month: selectedMonth.value, year: selectedYear.value },
+        transactions: transactions.value,
+        studentMasterList: studentMasterList.value,
+        presets: presets.value,
+        filesStatus: filesStatus.value
+      };
+
+      await downloadReportBundleZip({
+        activityWorkbook: activityWb,
+        duWorkbook: duWb,
+        fullStateJson: fullState,
+        periodLabel: activePeriodLabel.value
+      });
+    } catch (err) {
+      console.error(err);
+      alert('Gagal mendownload ZIP: ' + err.message);
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  // 4. Restore Full State dari File JSON
+  function restoreSystemFromJSON(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (data && data.transactions && Array.isArray(data.transactions)) {
+            transactions.value = data.transactions;
+            if (data.studentMasterList) studentMasterList.value = data.studentMasterList;
+            if (data.presets) savePresets(data.presets);
+            if (data.filesStatus) filesStatus.value = data.filesStatus;
+            if (data.period) {
+              selectedMonth.value = data.period.month;
+              selectedYear.value = data.period.year;
+            }
+            resolve(data);
+          } else {
+            throw new Error('Format file backup JSON tidak cocok.');
+          }
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsText(file);
+    });
   }
 
   return {
@@ -458,6 +651,9 @@ export function useFinance() {
     uploadResultModal,
     REPORT_STRUCTURE,
     MASTER_COA_LIST,
+    presets,
+    studentMasterList,
+    fullBreakdownRows,
     isSplitModalOpen,
     targetSplitTransaction,
     openSplitModal,
@@ -480,9 +676,13 @@ export function useFinance() {
     grandTotalExpense,
     surplusDeficit,
     processExcelFile,
+    executeAutoSplitDaftarUlang,
     setDetailAccount,
     backToReport,
     clearAllData,
-    exportFullExcel
+    exportFullExcel,
+    exportDaftarUlangExcel,
+    downloadFullReportBundle,
+    restoreSystemFromJSON
   };
 }
