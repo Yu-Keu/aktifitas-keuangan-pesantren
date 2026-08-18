@@ -27,7 +27,7 @@
       </div>
     </div>
 
-    <!-- WIDGET RINGKASAN REKONSILIASI (JIKA FILE TAGIHAN TERPASANG) -->
+    <!-- WIDGET RINGKASAN REKONSILIASI -->
     <div v-if="studentMasterList.length > 0" class="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
       <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
         <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Santri Terdata</span>
@@ -135,14 +135,17 @@
                 placeholder="Nama Skema Tarif..."
               />
 
+              <!-- Pilihan Jenjang & Kategori Khusus (AGK / PAUD / MI / MTS / MA) -->
               <select
                 v-model="preset.jenjang"
                 class="text-[11px] font-bold bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none text-slate-700 cursor-pointer"
               >
-                <option value="PAUD">PAUD / AGK</option>
+                <option value="PAUD">PAUD / RA</option>
                 <option value="MI">MI</option>
                 <option value="MTS">MTS</option>
                 <option value="MA">MA</option>
+                <option value="AGK">AGK (Anak Guru & Karyawan)</option>
+                <option value="KHUSUS">Khusus / PHL / GTT</option>
               </select>
             </div>
 
@@ -276,7 +279,6 @@ const { exportDaftarUlangExcel } = useFinance();
 
 const studentSearch = ref('');
 
-// KALKULASI REKONSILIASI TOTAL
 const totalTagihanMaster = computed(() => {
   return studentMasterList.value.reduce((sum, s) => sum + (Number(s.tagihan) || 0), 0);
 });

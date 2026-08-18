@@ -5,7 +5,7 @@ export function getJenjangByClass(kelasStr = '', itemDesc = '') {
   const k = String(kelasStr).toUpperCase().trim();
   const desc = String(itemDesc).toUpperCase().trim();
 
-  // 1. PAUD / RA / TK / KB / TPA / AGK
+  // 1. PAUD / RA / TK / KB / TPA (Murni Pendidikan Anak Usia Dini)
   if (
     k.startsWith('0') ||
     k.includes('RA') ||
@@ -14,12 +14,10 @@ export function getJenjangByClass(kelasStr = '', itemDesc = '') {
     k.includes('KB') ||
     k.includes('KELOMPOK BERMAIN') ||
     k.includes('TPA') ||
-    k.includes('AGK') ||
     desc.includes('PAUD') ||
     desc.includes('RA ') ||
     desc.includes('RA 20') ||
-    desc.includes('TPA') ||
-    desc.includes('AGK')
+    desc.includes('TPA')
   ) {
     return 'PAUD';
   }
@@ -29,7 +27,7 @@ export function getJenjangByClass(kelasStr = '', itemDesc = '') {
     return 'MA';
   }
 
-  // 3. Angka Kelas di Depan
+  // 3. Angka Kelas di Depan (1-6: MI, 7-9: MTS, 10-12: MA)
   const match = k.match(/^(\d+)/);
   if (match) {
     const grade = parseInt(match[1], 10);
@@ -38,7 +36,7 @@ export function getJenjangByClass(kelasStr = '', itemDesc = '') {
     if (grade >= 10 && grade <= 13) return 'MA';
   }
 
-  // 4. Fallback deteksi teks
+  // 4. Deteksi Teks Jenjang
   if (k.includes('MA') || k.includes('ALIYAH') || desc.includes('MA ') || desc.includes('ALIYAH')) return 'MA';
   if (k.includes('MTS') || k.includes('TSANAWIYAH') || desc.includes('MTS') || desc.includes('TSANAWIYAH')) return 'MTS';
   if (k.includes('MI') || k.includes('IBTIDAIYAH') || desc.includes('MI ') || desc.includes('IBTIDAIYAH')) return 'MI';

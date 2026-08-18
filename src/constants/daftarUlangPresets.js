@@ -5,11 +5,11 @@ export const DEFAULT_DAFTAR_ULANG_PRESETS = [
     id: "du-agk",
     name: "DAFTAR ULANG AGK",
     nominal: 900000,
-    jenjang: "PAUD",
+    jenjang: "AGK",
     items: [
-      { id: "i-1", name: "BUKU DAN UJIAN", code: "A2341", amount: 450000 },
-      { id: "i-2", name: "KEGIATAN", code: "A241", amount: 100000 },
-      { id: "i-3", name: "SERAGAM", code: "A237", amount: 350000 }
+      { id: "i-1", name: "BUKU DAN UJIAN", code: "A2342", amount: 450000 },
+      { id: "i-2", name: "KEGIATAN", code: "A2401", amount: 100000 },
+      { id: "i-3", name: "SERAGAM", code: "A236", amount: 350000 }
     ]
   },
   {
@@ -73,10 +73,10 @@ export const DEFAULT_DAFTAR_ULANG_PRESETS = [
     id: "du-agk-kenaikan",
     name: "DAFTAR ULANG AGK (KENAIKAN KELAS)",
     nominal: 1200000,
-    jenjang: "PAUD",
+    jenjang: "AGK",
     items: [
-      { id: "i-1", name: "BUKU DAN UJIAN", code: "A2341", amount: 600000 },
-      { id: "i-2", name: "KEGIATAN", code: "A241", amount: 600000 }
+      { id: "i-1", name: "BUKU DAN UJIAN", code: "A2342", amount: 600000 },
+      { id: "i-2", name: "KEGIATAN", code: "A2401", amount: 600000 }
     ]
   },
   {
@@ -193,7 +193,7 @@ export const DEFAULT_DAFTAR_ULANG_PRESETS = [
     id: "du-gtt",
     name: "DAFTAR ULANG GTT",
     nominal: 2951000,
-    jenjang: "MTS",
+    jenjang: "KHUSUS",
     items: [
       { id: "i-1", name: "BUKU DAN UJIAN", code: "A2342", amount: 1200000 },
       { id: "i-2", name: "KEGIATAN", code: "A2401", amount: 400000 },
@@ -207,7 +207,7 @@ export const DEFAULT_DAFTAR_ULANG_PRESETS = [
     id: "du-phl-mts",
     name: "DAFTAR ULANG ANAK KARYAWAN PHL MTS",
     nominal: 1800000,
-    jenjang: "MTS",
+    jenjang: "KHUSUS",
     items: [
       { id: "i-1", name: "BUKU DAN UJIAN", code: "A2342", amount: 1200000 },
       { id: "i-2", name: "KEGIATAN", code: "A2401", amount: 600000 }
@@ -217,7 +217,7 @@ export const DEFAULT_DAFTAR_ULANG_PRESETS = [
     id: "du-phl-ma",
     name: "DAFTAR ULANG ANAK KARYAWAN PHL MA",
     nominal: 1850000,
-    jenjang: "MA",
+    jenjang: "KHUSUS",
     items: [
       { id: "i-1", name: "BUKU DAN UJIAN", code: "A2343", amount: 1250000 },
       { id: "i-2", name: "KEGIATAN", code: "A2402", amount: 600000 }
