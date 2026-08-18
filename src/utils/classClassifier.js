@@ -2,10 +2,10 @@
 import { POS_MAPPING } from '../constants/posMapping.js';
 
 export function getJenjangByClass(kelasStr = '', itemDesc = '') {
-  const k = String(kelasStr).toUpperCase().trim();
-  const desc = String(itemDesc).toUpperCase().trim();
+  const k = String(kelasStr || '').toUpperCase().trim();
+  const desc = String(itemDesc || '').toUpperCase().trim();
 
-  // 1. PAUD / RA / TK / KB / TPA (Murni Pendidikan Anak Usia Dini)
+  // 1. PAUD / RA / TK / KB / TPA
   if (
     k.startsWith('0') ||
     k.includes('RA') ||
@@ -16,7 +16,6 @@ export function getJenjangByClass(kelasStr = '', itemDesc = '') {
     k.includes('TPA') ||
     desc.includes('PAUD') ||
     desc.includes('RA ') ||
-    desc.includes('RA 20') ||
     desc.includes('TPA')
   ) {
     return 'PAUD';
@@ -27,36 +26,36 @@ export function getJenjangByClass(kelasStr = '', itemDesc = '') {
     return 'MA';
   }
 
-  // 3. Angka Kelas di Depan (1-6: MI, 7-9: MTS, 10-12: MA)
+  // 3. Ekstraksi Angka Kelas di Depan: "11 E (Sebelas E)" -> 11, "2 A" -> 2
   const match = k.match(/^(\d+)/);
   if (match) {
     const grade = parseInt(match[1], 10);
     if (grade >= 1 && grade <= 6) return 'MI';
     if (grade >= 7 && grade <= 9) return 'MTS';
-    if (grade >= 10 && grade <= 13) return 'MA';
+    if (grade >= 10 && grade <= 12) return 'MA';
   }
 
-  // 4. Deteksi Teks Jenjang
-  if (k.includes('MA') || k.includes('ALIYAH') || desc.includes('MA ') || desc.includes('ALIYAH')) return 'MA';
-  if (k.includes('MTS') || k.includes('TSANAWIYAH') || desc.includes('MTS') || desc.includes('TSANAWIYAH')) return 'MTS';
+  // 4. Deteksi Kata Kunci Teks Jenjang
+  if (k.includes('MA') || k.includes('ALIYAH') || desc.includes('MA ') || desc.includes('ALIYAH') || k.includes('SEBELAS') || k.includes('SEPULUH') || k.includes('DUA BELAS')) return 'MA';
+  if (k.includes('MTS') || k.includes('TSANAWIYAH') || desc.includes('MTS') || desc.includes('TSANAWIYAH') || k.includes('TUJUH') || k.includes('DELAPAN') || k.includes('SEMBILAN')) return 'MTS';
   if (k.includes('MI') || k.includes('IBTIDAIYAH') || desc.includes('MI ') || desc.includes('IBTIDAIYAH')) return 'MI';
 
   return 'MTS';
 }
 
 export function routeIncomeItem(posName = '', kelasStr = '', amount = 0, itemDesc = '', senderStr = '') {
-  const pos = String(posName).toUpperCase().trim();
-  const desc = String(itemDesc).toUpperCase().trim();
-  const sender = String(senderStr).toUpperCase().trim();
+  const pos = String(posName || '').toUpperCase().trim();
+  const desc = String(itemDesc || '').toUpperCase().trim();
+  const sender = String(senderStr || '').toUpperCase().trim();
   const jenjang = getJenjangByClass(kelasStr, itemDesc);
   const absAmount = Math.abs(Number(amount) || 0);
 
-  // 1. PRIORITAS: DAFTAR ULANG
+  // 1. DAFTAR ULANG
   if (pos.includes('DAFTAR ULANG') || desc.includes('DAFTAR ULANG')) {
     return { kode: 'A241_DU', desc: 'Daftar Ulang Kenaikan Kelas' };
   }
 
-  // 2. PRIORITAS: DONASI & DANA TITIPAN
+  // 2. DONASI & DANA TITIPAN
   if (pos.includes('DONASI') || pos.includes('TITIPAN') || desc.includes('DONASI KEMANUSIAAN')) {
     if (pos.includes('IFTHOR') || desc.includes('IFTHOR')) {
       return { kode: 'A26', desc: 'Penerimaan Lain-lain (Ifthor)' };
@@ -64,7 +63,7 @@ export function routeIncomeItem(posName = '', kelasStr = '', amount = 0, itemDes
     return { kode: 'A24', desc: 'Dana Titip (Donasi Kemanusiaan/Baksos)' };
   }
 
-  // 3. PRIORITAS: KAFALAH YATIM
+  // 3. KAFALAH YATIM
   if (pos.includes('KAFALAH') || pos.includes('YATIM') || desc.includes('KAFALAH') || desc.includes('YATIM')) {
     const fullText = `${sender} ${desc} ${pos}`;
     if (fullText.includes('YAYASAN') || fullText.includes('LAJNAH')) {
@@ -73,11 +72,11 @@ export function routeIncomeItem(posName = '', kelasStr = '', amount = 0, itemDes
     return { kode: 'A172', desc: 'Penerimaan Kafalah dari nonyayasan' };
   }
 
-  // 4. PRIORITAS: SPP / BIAYA PONDOKAN
+  // 4. SPP / BIAYA PONDOKAN
   if (pos.includes('SPP') || pos.includes('PONDOKAN')) {
     if (jenjang === 'PAUD') return { kode: 'A121', desc: 'Penerimaan SPP PAUD / RA / TPA' };
     if (jenjang === 'MI') return { kode: 'A122', desc: 'Penerimaan SPP MI' };
-    
+
     const isNonAsrama = absAmount <= 600000;
 
     if (jenjang === 'MA') {
@@ -90,28 +89,28 @@ export function routeIncomeItem(posName = '', kelasStr = '', amount = 0, itemDes
       : { kode: 'A1232', desc: 'Penerimaan SPP MTs Asrama' };
   }
 
-  // 5. PRIORITAS: BIAYA KEGIATAN SISWA
+  // 5. BIAYA KEGIATAN SISWA
   if (pos.includes('KEGIATAN') || (pos.includes('SISWA') && desc.includes('KEGIATAN'))) {
     if (jenjang === 'PAUD') return { kode: 'A241', desc: 'Kegiatan PAUD / RA' };
     if (jenjang === 'MA') return { kode: 'A2402', desc: 'Kegiatan MA' };
     return { kode: 'A2401', desc: 'Kegiatan MTs' };
   }
 
-  // 6. PRIORITAS: BOS
+  // 6. BOS
   if (pos.includes('BOS')) {
     if (jenjang === 'MI') return { kode: 'A141', desc: 'BOS MI' };
     if (jenjang === 'MTS') return { kode: 'A142', desc: 'BOS MTS' };
     if (jenjang === 'MA') return { kode: 'A143', desc: 'BOS MA' };
   }
 
-  // 7. PRIORITAS: BUKU & UJIAN
+  // 7. BUKU & UJIAN
   if (pos.includes('BUKU') || pos.includes('UJIAN')) {
     if (jenjang === 'MI') return { kode: 'A2341', desc: 'Buku dan Ujian MI' };
     if (jenjang === 'MTS') return { kode: 'A2342', desc: 'Buku dan Ujian MTs' };
     if (jenjang === 'MA') return { kode: 'A2343', desc: 'Buku dan Ujian MA' };
   }
 
-  // 8. PRIORITAS: PERPUSTAKAAN
+  // 8. PERPUSTAKAAN
   if (pos.includes('PERPUSTAKAAN') || pos.includes('PUSTAKA')) {
     if (jenjang === 'MI') return { kode: 'A2391', desc: 'Perpustakaan MI' };
     if (jenjang === 'MTS') return { kode: 'A2392', desc: 'Perpustakaan MTs' };

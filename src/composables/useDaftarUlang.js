@@ -2,9 +2,16 @@
 import { ref, computed } from 'vue';
 import { DEFAULT_DAFTAR_ULANG_PRESETS } from '../constants/daftarUlangPresets.js';
 import { getJenjangByClass } from '../utils/classClassifier.js';
-import { parseAmount } from '../utils/formatters.js';
+import { parseAmount, formatIDR } from '../utils/formatters.js';
 
 const STORAGE_KEY = 'PIT_DAFTAR_ULANG_PRESETS_V3';
+
+function cleanKey(str = '') {
+  return String(str || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .trim();
+}
 
 export function useDaftarUlang() {
   const presets = ref(loadPresets());
@@ -51,78 +58,123 @@ export function useDaftarUlang() {
     savePresets(presets.value);
   }
 
-  // VALIDASI KETAT BARIS SANTRI (MENGABAIKAN HEADER & BARIS TOTAL)
   function isInvalidStudentRow(cols) {
+    if (!cols || cols.length < 4) return true;
     const c0 = String(cols[0] || '').trim().toUpperCase();
     const c1 = String(cols[1] || '').trim().toUpperCase();
     const c2 = String(cols[2] || '').trim().toUpperCase();
     const fullLine = cols.join(' ').toUpperCase();
 
-    // 1. Lewati Header / Sub-Header
-    if (c0.includes('NO.') || c1.includes('NOMOR INDUK') || c1.includes('NOMOR') || c2.includes('NAMA SISWA')) {
+    // Lewati baris Header & Sub-Header
+    if (c0 === 'NO.' || c0 === 'NO' || c1.includes('NOMOR INDUK') || c1.includes('NIS') || c2.includes('NAMA SISWA')) {
       return true;
     }
-    if (fullLine.includes('KELAS TERAKHIR') || (fullLine.includes('TAHUN') && fullLine.includes('NAMA KELAS'))) {
+    if (fullLine.includes('STATUS TERAKHIR') || (fullLine.includes('TAHUN') && fullLine.includes('NAMA KELAS'))) {
       return true;
     }
-
-    // 2. Lewati Baris TOTAL / SUMMARY di bawah tabel
     if (c0 === 'TOTAL' || c1 === 'TOTAL' || c2 === 'TOTAL' || fullLine.startsWith('TOTAL')) {
       return true;
     }
-
-    // 3. Lewati jika nama santri kosong / tidak valid
-    if (!c2 || c2.length < 2 || c2 === 'NAMA') {
+    if (!c2 || c2.length < 2 || c2 === 'NAMA' || c2 === 'NAMA SISWA') {
       return true;
     }
 
     return false;
   }
 
-  // PARSE FILE MASTER TAGIHAN (FILE B)
+  // PARSE FILE MASTER TAGIHAN (DENGAN DETEKSI HEADER STRICT & TEPAT)
   function parseTagihanSheet(rows = []) {
-    let headerIdx = 0;
-    for (let r = 0; r < Math.min(rows.length, 12); r++) {
-      const line = (rows[r] || []).join(' ').toUpperCase();
-      if (line.includes('NOMOR INDUK') || line.includes('NAMA SISWA') || line.includes('TAGIHAN')) {
+    let headerIdx = -1;
+
+    // 1. Cari baris header tabel yang ASLI (harus ada NOMOR INDUK + NAMA + TAGIHAN)
+    for (let r = 0; r < Math.min(rows.length, 15); r++) {
+      const line = (rows[r] || []).map(cell => String(cell || '').toUpperCase().trim()).join(' ');
+      if (
+        (line.includes('NOMOR INDUK') || line.includes('NIS')) &&
+        (line.includes('NAMA SISWA') || line.includes('NAMA')) &&
+        line.includes('TAGIHAN')
+      ) {
         headerIdx = r;
         break;
       }
     }
 
-    const headerRow = (rows[headerIdx] || []).map(h => String(h || '').trim().toUpperCase());
+    // Fallback jika tidak lengkap
+    if (headerIdx === -1) {
+      for (let r = 0; r < Math.min(rows.length, 15); r++) {
+        const line = (rows[r] || []).map(cell => String(cell || '').toUpperCase().trim()).join(' ');
+        if (line.includes('NOMOR INDUK') || line.includes('NAMA SISWA')) {
+          headerIdx = r;
+          break;
+        }
+      }
+    }
 
-    // Deteksi Posisi Kolom
+    if (headerIdx === -1) headerIdx = 0;
+
+    const headerRow = (rows[headerIdx] || []).map(h => String(h || '').trim().toUpperCase());
+    const subHeaderRow = (rows[headerIdx + 1] || []).map(h => String(h || '').trim().toUpperCase());
+
+    // 2. Pemetaan Kolom Presisi Berdasarkan Header Screenshot Excel Anda
     const colIdx = {
-      nis: headerRow.findIndex(h => h.includes('NOMOR INDUK') || h.includes('NIS')),
-      nama: headerRow.findIndex(h => h.includes('NAMA SISWA') || h === 'NAMA'),
-      jk: headerRow.findIndex(h => h.includes('KELAMIN') || h === 'JK' || h === 'L/P'),
-      kelas: headerRow.findLastIndex(h => h.includes('KELAS') || h.includes('ROMBEL')),
-      tagihan: headerRow.findIndex(h => h.includes('TAGIHAN')),
-      dibayar: headerRow.findIndex(h => h.includes('DIBAYAR') || h.includes('BAYAR')),
-      sisa: headerRow.findIndex(h => h.includes('SISA'))
+      nis: headerRow.findIndex(h => h === 'NOMOR INDUK' || h === 'NIS' || (h.includes('INDUK') && !h.includes('KELAS'))),
+      nama: headerRow.findIndex(h => h === 'NAMA SISWA' || h === 'NAMA' || h.includes('NAMA SISWA')),
+      jk: headerRow.findIndex(h => h === 'JENIS KELAMIN' || h === 'JK' || h === 'L/P' || h.includes('KELAMIN')),
+      kelas: -1,
+      tagihan: headerRow.findIndex(h => h === 'TAGIHAN'),
+      dibayar: headerRow.findIndex(h => h === 'DIBAYAR' || h === 'BAYAR'),
+      sisa: headerRow.findIndex(h => h === 'SISA')
     };
+
+    // Deteksi letak Kolom Kelas (di sub-header kolom 6 atau di samping Tahun)
+    colIdx.kelas = subHeaderRow.findIndex(h => h === 'NAMA KELAS' || h === 'KELAS');
+    if (colIdx.kelas === -1) {
+      colIdx.kelas = headerRow.findIndex(h => h === 'NAMA KELAS');
+    }
+    if (colIdx.kelas === -1) {
+      const kelasTerakhirIdx = headerRow.findIndex(h => h.includes('KELAS TERAKHIR'));
+      colIdx.kelas = kelasTerakhirIdx !== -1 ? kelasTerakhirIdx + 1 : 6;
+    }
+
+    // Default Fallback sesuai struktur baku template PIT
+    if (colIdx.nis === -1) colIdx.nis = 1;
+    if (colIdx.nama === -1) colIdx.nama = 2;
+    if (colIdx.jk === -1) colIdx.jk = 3;
+    if (colIdx.kelas === -1) colIdx.kelas = 6;
+    if (colIdx.tagihan === -1) colIdx.tagihan = 7;
+    if (colIdx.dibayar === -1) colIdx.dibayar = 8;
+    if (colIdx.sisa === -1) colIdx.sisa = 9;
 
     const newMap = new Map();
     const list = [];
 
     for (let i = headerIdx + 1; i < rows.length; i++) {
       const cols = rows[i];
-      if (!cols || cols.length < 4 || isInvalidStudentRow(cols)) continue;
+      if (isInvalidStudentRow(cols)) continue;
 
-      const nis = colIdx.nis !== -1 ? String(cols[colIdx.nis] || '').trim() : String(cols[1] || '').trim();
-      const nama = colIdx.nama !== -1 ? String(cols[colIdx.nama] || '').trim().toUpperCase() : String(cols[2] || '').trim().toUpperCase();
-      const jk = colIdx.jk !== -1 ? String(cols[colIdx.jk] || 'L').trim().toUpperCase() : String(cols[3] || 'L').trim().toUpperCase();
-      const kelas = colIdx.kelas !== -1 ? String(cols[colIdx.kelas] || '').trim() : String(cols[6] || cols[5] || '').trim();
+      const nis = String(cols[colIdx.nis] || '').trim();
+      const nama = String(cols[colIdx.nama] || '').trim().toUpperCase();
+      const jk = String(cols[colIdx.jk] || 'L').trim().toUpperCase();
       
-      const tagihan = parseAmount(colIdx.tagihan !== -1 ? cols[colIdx.tagihan] : cols[7]);
-      const dibayar = parseAmount(colIdx.dibayar !== -1 ? cols[colIdx.dibayar] : cols[8]);
-      const sisa = parseAmount(colIdx.sisa !== -1 ? cols[colIdx.sisa] : cols[9]);
+      // Ambil Nama Kelas (jika terbaca tahun "2026/2027", ambil kolom sebelahnya)
+      let kelas = String(cols[colIdx.kelas] || '').trim();
+      if (kelas.includes('/') || (kelas.length === 4 && !isNaN(Number(kelas)))) {
+        if (cols[colIdx.kelas + 1]) kelas = String(cols[colIdx.kelas + 1]).trim();
+      }
+
+      const tagihan = parseAmount(cols[colIdx.tagihan]);
+      const dibayar = parseAmount(cols[colIdx.dibayar]);
+      const sisa = parseAmount(cols[colIdx.sisa]);
 
       if (nama) {
         const studentObj = { nis, nama, jk, kelas, tagihan, dibayar, sisa };
         list.push(studentObj);
-        if (nis) newMap.set(nis, studentObj);
+        
+        if (nis) {
+          newMap.set(cleanKey(nis), studentObj);
+          newMap.set(nis, studentObj);
+        }
+        newMap.set(cleanKey(nama), studentObj);
         newMap.set(nama, studentObj);
       }
     }
@@ -132,20 +184,14 @@ export function useDaftarUlang() {
     return list.length;
   }
 
-  // PENCARI SKEMA TARIF TERBAIK
+  // PENCARI SKEMA TARIF: HANYA BERDASARKAN NOMINAL MATCHING
   function matchPreset(tagihanAmount, kelasStr = '', descStr = '') {
     const amount = Math.abs(Number(tagihanAmount) || 0);
     const jenjang = getJenjangByClass(kelasStr, descStr);
 
-    // 1. Cocokkan Nominal Tagihan Siswa dengan Master Skema
     if (amount > 0) {
-      // Khusus tarif unik
-      if (amount === 15635000) return presets.value.find(p => p.id === 'du-khusus-keysha') || presets.value[0];
-      if (amount === 9000000) return presets.value.find(p => p.id === 'du-non-asrama-mi-mts') || presets.value[0];
-      if (amount === 2951000) return presets.value.find(p => p.id === 'du-gtt') || presets.value[0];
-
-      // Cocokkan nominal + jenjang yang sama
-      const matched = presets.value.filter(p => p.nominal === amount);
+      const matched = presets.value.filter(p => Number(p.nominal) === amount);
+      
       if (matched.length === 1) return matched[0];
       if (matched.length > 1) {
         const exactJenjang = matched.find(p => p.jenjang === jenjang);
@@ -154,32 +200,10 @@ export function useDaftarUlang() {
       }
     }
 
-    // 2. Fallback Heuristik Kelas
-    if (jenjang === 'MI') {
-      const matchGrade = (kelasStr || '').match(/^(\d+)/);
-      if (matchGrade) {
-        const miPreset = presets.value.find(p => p.id === `du-mi-${matchGrade[1]}`);
-        if (miPreset) return miPreset;
-      }
-      return presets.value.find(p => p.id === 'du-mi-2') || presets.value[0];
-    }
-
-    if (jenjang === 'MTS') {
-      return presets.value.find(p => p.id === 'du-kenaikan-mts-asrama') ||
-             presets.value.find(p => p.id === 'du-kenaikan-mts') ||
-             presets.value[0];
-    }
-
-    if (jenjang === 'MA') {
-      return presets.value.find(p => p.id === 'du-kenaikan-ma-asrama') ||
-             presets.value.find(p => p.id === 'du-kenaikan-ma') ||
-             presets.value[0];
-    }
-
-    return presets.value[0];
+    return null;
   }
 
-  // GENERATOR RINCIAN SELURUH SANTRI (SESUAI DENGAN DIBAYAR)
+  // GENERATOR RINCIAN SELURUH SANTRI (TAB DAFTAR ULANG)
   const fullBreakdownRows = computed(() => {
     const rows = [];
 
@@ -187,7 +211,21 @@ export function useDaftarUlang() {
       const preset = matchPreset(student.tagihan, student.kelas, student.nama);
       let availableCash = Math.abs(Number(student.dibayar) || 0);
 
-      // Jalankan alokasi waterfall per item pos
+      // JIKA TIDAK ADA SKEMA YANG COCOK: Tampilkan 1 baris utuh
+      if (!preset) {
+        rows.push({
+          nis: student.nis,
+          nama: student.nama,
+          jk: student.jk,
+          kelas: student.kelas,
+          posName: `Daftar Ulang [Skema ${formatIDR(student.tagihan)} Belum Diset]`,
+          code: 'A241_DU',
+          amount: availableCash
+        });
+        return;
+      }
+
+      // JIKA COCOK DENGAN PRESET: Alirkan dana pos per pos (Waterfall)
       (preset.items || []).forEach((item) => {
         const maxTarget = Number(item.amount) || 0;
         const allocated = Math.min(availableCash, maxTarget);
@@ -204,14 +242,14 @@ export function useDaftarUlang() {
         });
       });
 
-      // TAMPUNG LEBIH BAYAR JIKA ADA (Agar total selalu 100% klop)
+      // Kelebihan bayar HANYA jika santri membayar melebihi total kuota preset
       if (availableCash > 0) {
         rows.push({
           nis: student.nis,
           nama: student.nama,
           jk: student.jk,
           kelas: student.kelas,
-          posName: 'KELEBIHAN PEMBAYARAN',
+          posName: 'Kelebihan Pembayaran Daftar Ulang',
           code: 'A26',
           amount: availableCash
         });
@@ -221,11 +259,11 @@ export function useDaftarUlang() {
     return rows;
   });
 
-  // WATERFALL ENGINE UNTUK PENERIMAAN KASIR
+  // WATERFALL ENGINE TRANSAKSI KASIR (PENERIMAAN)
   function runWaterfallSplit(allTransactions = []) {
     let splitCount = 0;
+    let unmatchedCount = 0;
     let skippedPastYearCount = 0;
-    let failedCount = 0;
 
     const studentAllocationTracker = new Map();
     const resultList = [];
@@ -250,21 +288,37 @@ export function useDaftarUlang() {
         return;
       }
 
-      const nisKey = tx.nis || tx.senderOrStudent || tx.desc;
-      const studentInfo = studentTagihanMaster.value.get(tx.nis) || studentTagihanMaster.value.get(tx.senderOrStudent?.toUpperCase());
-      const targetTarif = studentInfo ? studentInfo.tagihan : tx.amount;
-      const preset = matchPreset(targetTarif, tx.kelas, tx.desc);
+      const cleanNis = cleanKey(tx.nis);
+      const cleanNama = cleanKey(tx.senderOrStudent);
+      
+      let studentInfo = null;
+      if (cleanNis) studentInfo = studentTagihanMaster.value.get(cleanNis);
+      if (!studentInfo && cleanNama) {
+        studentInfo = studentTagihanMaster.value.get(cleanNama);
+      }
 
+      const targetTarif = studentInfo ? studentInfo.tagihan : tx.amount;
+      const targetKelas = (studentInfo && studentInfo.kelas) ? studentInfo.kelas : tx.kelas;
+      const preset = matchPreset(targetTarif, targetKelas, tx.desc);
+
+      // JIKA SKEMA BELUM DISET: Jangan di-split, biarkan utuh di A241_DU
       if (!preset || !preset.items || preset.items.length === 0) {
-        resultList.push(tx);
-        failedCount++;
+        resultList.push({
+          ...tx,
+          code: 'A241_DU',
+          desc: `${tx.desc} [Skema Tarif ${formatIDR(targetTarif)} Belum Diset]`,
+          isUnmatchedScheme: true
+        });
+        unmatchedCount++;
         return;
       }
 
-      if (!studentAllocationTracker.has(nisKey)) {
-        studentAllocationTracker.set(nisKey, new Map());
+      // JIKA SKEMA COCOK: Jalankan Waterfall
+      const trackerKey = cleanNis || cleanNama || cleanKey(tx.desc);
+      if (!studentAllocationTracker.has(trackerKey)) {
+        studentAllocationTracker.set(trackerKey, new Map());
       }
-      const itemAllocatedMap = studentAllocationTracker.get(nisKey);
+      const itemAllocatedMap = studentAllocationTracker.get(trackerKey);
 
       let availableCash = Math.abs(Number(tx.amount) || 0);
       const splitsForThisTx = [];
@@ -316,8 +370,8 @@ export function useDaftarUlang() {
     return {
       updatedTransactions: resultList,
       splitCount,
-      skippedPastYearCount,
-      failedCount
+      unmatchedCount,
+      skippedPastYearCount
     };
   }
 

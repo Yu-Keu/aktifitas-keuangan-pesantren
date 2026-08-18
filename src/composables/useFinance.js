@@ -46,21 +46,19 @@ export function useFinance() {
   const reassignTargetIds = ref([]);
   const singleReassignTransaction = ref(null);
 
-  // --------------------------------------------------------------------------
-  // PENGATURAN PERIODE & FILTERING REAKTIF
-  // --------------------------------------------------------------------------
+  // Periode Settings
   const now = new Date();
-  const periodMode = ref('single'); // 'single' | 'academic' | 'all'
+  const periodMode = ref('single');
   const selectedMonth = ref(now.getMonth() + 1);
   const selectedYear = ref(now.getFullYear());
-  const selectedAcademicYear = ref(2026); // 2026 -> TA 2026/2027
-  const hideEmptyMonthColumns = ref(true); // Hanya tampilkan bulan yang ada data transaksi
+  const selectedAcademicYear = ref(2026);
+  const hideEmptyMonthColumns = ref(true);
 
-  // Semua transaksi tersimpan utuh di memori
+  // Master Transaksi Asli (rawTransactions) & Transaksi Tampil (transactions)
+  const rawTransactions = ref([]);
   const transactions = ref([]);
   const selectedAccountDetail = ref(null);
 
-  // Label Periode Aktif
   const activePeriodLabel = computed(() => {
     if (periodMode.value === 'single') {
       return `${MONTH_NAMES[selectedMonth.value]} ${selectedYear.value}`;
@@ -71,7 +69,6 @@ export function useFinance() {
     return 'Semua Periode Transaksi';
   });
 
-  // Transaksi Terfilter Sesuai Mode Periode (Dynamic Reactive)
   const filteredTransactionsByPeriod = computed(() => {
     if (periodMode.value === 'single') {
       return transactions.value.filter(
@@ -90,7 +87,6 @@ export function useFinance() {
     return transactions.value;
   });
 
-  // Daftar Bulan yang Tersedia di Seluruh Dataset
   const availableMonthsInDataset = computed(() => {
     const map = new Map();
     transactions.value.forEach(t => {
@@ -110,7 +106,6 @@ export function useFinance() {
     return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
   });
 
-  // Kolom-kolom Bulan Aktif yang Ditampilkan pada Tabel Matriks
   const visibleMonths = computed(() => {
     if (periodMode.value === 'single') {
       const key = `${selectedYear.value}-${String(selectedMonth.value).padStart(2, '0')}`;
@@ -166,11 +161,8 @@ export function useFinance() {
         }];
   });
 
-  // --------------------------------------------------------------------------
-  // MATRIKS REAKTIF CEPAT (O(1) Cell Lookup)
-  // --------------------------------------------------------------------------
   const codeSumMatrix = computed(() => {
-    const matrix = {}; // code -> { [monthKey]: number, total: number }
+    const matrix = {};
     const periodTxs = filteredTransactionsByPeriod.value;
 
     for (let i = 0; i < periodTxs.length; i++) {
@@ -192,9 +184,7 @@ export function useFinance() {
   function getCodeSum(code, monthKey = null) {
     const codeData = codeSumMatrix.value[code];
     if (!codeData) return 0;
-    if (monthKey) {
-      return codeData[monthKey] || 0;
-    }
+    if (monthKey) return codeData[monthKey] || 0;
     return codeData.total || 0;
   }
 
@@ -234,7 +224,6 @@ export function useFinance() {
     return grandTotalIncome(monthKey) - grandTotalExpense(monthKey);
   }
 
-  // Navigasi & Detail
   function setDetailAccount(item) {
     savedScrollPosition.value = window.pageYOffset || document.documentElement.scrollTop || 0;
     selectedAccountDetail.value = item;
@@ -251,6 +240,7 @@ export function useFinance() {
 
   function clearAllData() {
     if (confirm('Kosongkan semua data transaksi yang sudah dimuat?')) {
+      rawTransactions.value = [];
       transactions.value = [];
       studentMasterList.value = [];
       selectedAccountDetail.value = null;
@@ -260,7 +250,6 @@ export function useFinance() {
     }
   }
 
-  // Reassign & Split
   function openReassignModal(item) {
     singleReassignTransaction.value = item;
     reassignTargetIds.value = [item.id];
@@ -289,6 +278,7 @@ export function useFinance() {
   function deleteTransaction(transactionId) {
     if (confirm('Hapus baris transaksi ini?')) {
       transactions.value = transactions.value.filter(t => t.id !== transactionId);
+      rawTransactions.value = rawTransactions.value.filter(t => t.id !== transactionId);
     }
   }
 
@@ -296,6 +286,7 @@ export function useFinance() {
     if (!transactionIds || transactionIds.length === 0) return;
     if (confirm(`Hapus ${transactionIds.length} transaksi terpilih?`)) {
       transactions.value = transactions.value.filter(t => !transactionIds.includes(t.id));
+      rawTransactions.value = rawTransactions.value.filter(t => !transactionIds.includes(t.id));
     }
   }
 
@@ -323,21 +314,14 @@ export function useFinance() {
     targetSplitTransaction.value = null;
   }
 
+  // Selalu eksekusi split dari rawTransactions
   function executeAutoSplitDaftarUlang() {
-    const result = runWaterfallSplit(transactions.value);
+    const result = runWaterfallSplit(rawTransactions.value);
     transactions.value = result.updatedTransactions;
     return result;
   }
 
-  // --------------------------------------------------------------------------
-  // PARSER EXCEL DINAMIS (Menyimpan Seluruh Bulan Tanpa Dibuang)
-  // --------------------------------------------------------------------------
   async function processExcelFile(file, type) {
-    if (type === 'tagihan_du' && !filesStatus.value.penerimaan.uploaded) {
-      alert('Perhatian: Harap upload File Penerimaan terlebih dahulu agar transaksi kasir dapat otomatis di-split.');
-      return;
-    }
-
     isLoading.value = true;
     loadingStatus.value = `Membaca file ${file.name}...`;
 
@@ -366,11 +350,11 @@ export function useFinance() {
             uploadResultModal.value = {
               show: true,
               success: true,
-              title: 'Master Tagihan Terpasang & Ter-Split',
+              title: 'Master Tagihan DU Terpasang',
               fileName: file.name,
               loadedCount: count,
               skippedCount: splitRes.skippedPastYearCount,
-              message: `Berhasil memuat ${count} santri dan otomatis memecah ${splitRes.splitCount} transaksi Daftar Ulang ke pos masing-masing!`
+              message: `Berhasil memuat ${count} santri. ${splitRes.splitCount} transaksi kasir ter-split ke pos masing-masing, dan ${splitRes.unmatchedCount} transaksi tetap di pos Daftar Ulang (karena skema tarif belum diset).`
             };
 
             resolve({ loadedCount: count, skippedCount: 0 });
@@ -466,16 +450,16 @@ export function useFinance() {
 
             const mapCol = {
               noTrans: headerRow.findIndex(h => h.includes('NOMOR TRANSAKSI') || h.includes('NO TRANSAKSI')),
-              date: headerRow.findIndex(h => h.includes('TANGGAL') || h.includes('DATE') || h.includes('WAKTU')),
-              bank: headerRow.findIndex(h => h.includes('METODE') || h.includes('BANK') || h.includes('KAS')),
-              pic: headerRow.findIndex(h => h.includes('PETUGAS') || h.includes('KASIR') || h.includes('USER')),
+              date: headerRow.findIndex(h => h.includes('TANGGAL') || h.includes('DATE')),
+              bank: headerRow.findIndex(h => h.includes('METODE') || h.includes('BANK')),
+              pic: headerRow.findIndex(h => h.includes('PETUGAS') || h.includes('KASIR')),
               nis: headerRow.findIndex(h => h.includes('NIS') || h.includes('INDUK')),
-              nama: headerRow.findIndex(h => h.includes('NAMA')),
+              nama: headerRow.findIndex(h => h === 'NAMA' || h.includes('NAMA SISWA')),
               kelas: headerRow.findIndex(h => h.includes('KELAS') || h.includes('ROMBEL')),
               pos: headerRow.findIndex(h => h.includes('POS PENERIMAAN') || (h.includes('POS') && !h.includes('PENGELUARAN'))),
               tapel: headerRow.findIndex(h => h.includes('TAPEL') || h.includes('TAHUN AJARAN')),
-              ketItem: headerRow.findIndex(h => h.includes('KETERANGAN ITEM') || h.includes('JENIS BIAYA') || h.includes('URAIAN') || h.includes('KETERANGAN')),
-              amount: headerRow.findLastIndex(h => h.includes('PENERIMAAN') || h.includes('NOMINAL') || h.includes('JUMLAH') || h.includes('BAYAR') || h.includes('TOTAL'))
+              ketItem: headerRow.findIndex(h => h.includes('KETERANGAN ITEM') || h.includes('JENIS BIAYA') || h.includes('URAIAN')),
+              amount: headerRow.findLastIndex(h => h.includes('PENERIMAAN') || h.includes('NOMINAL') || h.includes('JUMLAH') || h.includes('BAYAR'))
             };
 
             for (let i = headerIdx + 1; i < rows.length; i++) {
@@ -483,12 +467,12 @@ export function useFinance() {
               if (!cols || cols.length < 3) continue;
 
               const noTrans = mapCol.noTrans !== -1 ? String(cols[mapCol.noTrans] || '').trim() : String(cols[0] || '').trim();
-              const pic = mapCol.pic !== -1 ? String(cols[mapCol.pic] || 'Kasir/Bank').trim() : 'Kasir/Bank';
+              const pic = mapCol.pic !== -1 ? String(cols[mapCol.pic] || 'Kasir').trim() : 'Kasir';
               const bank = mapCol.bank !== -1 ? String(cols[mapCol.bank] || '').trim() : '';
               const nis = mapCol.nis !== -1 ? String(cols[mapCol.nis] || '').trim() : '';
-              const senderOrStudent = mapCol.nama !== -1 ? String(cols[mapCol.nama] || '').trim() : String(cols[4] || cols[5] || '').trim();
-              const kelas = mapCol.kelas !== -1 ? String(cols[mapCol.kelas] || '').trim() : String(cols[6] || cols[7] || '').trim();
-              const pos = mapCol.pos !== -1 ? String(cols[mapCol.pos] || '').trim().toUpperCase() : String(cols[7] || cols[8] || '').trim().toUpperCase();
+              const senderOrStudent = mapCol.nama !== -1 ? String(cols[mapCol.nama] || '').trim() : '';
+              const kelas = mapCol.kelas !== -1 ? String(cols[mapCol.kelas] || '').trim() : '';
+              const pos = mapCol.pos !== -1 ? String(cols[mapCol.pos] || '').trim().toUpperCase() : '';
               const tapel = mapCol.tapel !== -1 ? String(cols[mapCol.tapel] || '').trim() : '';
               const ketItem = mapCol.ketItem !== -1 ? String(cols[mapCol.ketItem] || pos).trim() : pos;
 
@@ -506,23 +490,6 @@ export function useFinance() {
               }
 
               let parsedDate = mapCol.date !== -1 ? parseExcelDate(cols[mapCol.date]) : null;
-              if (!parsedDate && noTrans) {
-                const dateMatch = noTrans.match(/(?:SIS|TRX|TX)?(\d{4})(\d{2})(\d{2})/i);
-                if (dateMatch) {
-                  const yr = parseInt(dateMatch[1], 10);
-                  const mo = parseInt(dateMatch[2], 10);
-                  const dy = parseInt(dateMatch[3], 10);
-                  if (yr >= 2020 && yr <= 2035 && mo >= 1 && mo <= 12 && dy >= 1 && dy <= 31) {
-                    parsedDate = {
-                      year: yr,
-                      month: mo,
-                      day: dy,
-                      monthKey: `${yr}-${String(mo).padStart(2, '0')}`,
-                      formatted: `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`
-                    };
-                  }
-                }
-              }
 
               if (amount !== 0 && pos) {
                 const tYear = parsedDate ? parsedDate.year : selectedYear.value;
@@ -558,11 +525,12 @@ export function useFinance() {
             };
           }
 
-          // Simpan seluruh data baru
-          transactions.value.push(...newItems);
+          rawTransactions.value.push(...newItems);
 
           if (filesStatus.value.tagihanDU.uploaded) {
             executeAutoSplitDaftarUlang();
+          } else {
+            transactions.value = [...rawTransactions.value];
           }
 
           uploadResultModal.value = {
@@ -605,9 +573,6 @@ export function useFinance() {
     return filteredTransactionsByPeriod.value.filter(t => t.code === code);
   }
 
-  // --------------------------------------------------------------------------
-  // EKSPOR EXCEL & ARSIP ZIP LENGKAP
-  // --------------------------------------------------------------------------
   function generateActivityReportWorkbook() {
     return buildActivityMatrixWorkbook({
       structure: REPORT_STRUCTURE,
@@ -654,6 +619,7 @@ export function useFinance() {
         selectedMonth: selectedMonth.value,
         selectedYear: selectedYear.value,
         selectedAcademicYear: selectedAcademicYear.value,
+        rawTransactions: rawTransactions.value,
         transactions: transactions.value,
         studentMasterList: studentMasterList.value,
         presets: presets.value,
@@ -681,6 +647,7 @@ export function useFinance() {
         try {
           const data = JSON.parse(e.target.result);
           if (data && data.transactions && Array.isArray(data.transactions)) {
+            rawTransactions.value = data.rawTransactions || data.transactions;
             transactions.value = data.transactions;
             if (data.studentMasterList) studentMasterList.value = data.studentMasterList;
             if (data.presets) savePresets(data.presets);
